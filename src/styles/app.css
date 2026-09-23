@@ -3570,3 +3570,209 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Research notes: readable Markdown with local math fonts. */
+.markdown-editor {
+  border: 1px solid var(--border, #d9e0e7);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  color: #202c3b;
+}
+.notes-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  background: #f5f7fa;
+}
+.notes-heading button,
+.notes-toolbar button {
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 9px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.notes-heading button[aria-pressed='true'] {
+  background: #dde8fc;
+  color: #2455aa;
+}
+.notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 5px 8px;
+  border-bottom: 1px solid #e3e8ef;
+}
+.notes-toolbar button:hover {
+  background: #edf2f8;
+}
+.markdown-editor textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 12px;
+  line-height: 1.65;
+  resize: vertical;
+  min-height: 200px;
+  font-family: ui-monospace, monospace;
+}
+.markdown-editor > small {
+  display: block;
+  padding: 8px 12px;
+  color: #65758a;
+  font-size: 11px;
+}
+.notes-preview {
+  padding: 14px;
+  min-height: 120px;
+  max-height: 65vh;
+  overflow: auto;
+}
+.markdown-content {
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  white-space: normal;
+}
+.markdown-content p {
+  margin: 0.6em 0 1em;
+}
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 1em 0 0.5em;
+  line-height: 1.3;
+}
+.markdown-content h1 {
+  font-size: 22px;
+}
+.markdown-content h2 {
+  font-size: 18px;
+}
+.markdown-content h3 {
+  font-size: 15px;
+}
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.6em;
+}
+.markdown-content pre,
+.markdown-content .katex-display {
+  overflow-x: auto;
+  padding: 10px;
+}
+.markdown-content code {
+  background: #edf1f5;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.markdown-content blockquote {
+  border-left: 3px solid #83b3e5;
+  margin-left: 0;
+  padding-left: 12px;
+  color: #53647b;
+}
+.markdown-content table {
+  display: block;
+  overflow: auto;
+  border-collapse: collapse;
+}
+.markdown-content td,
+.markdown-content th {
+  border: 1px solid #dbe2ea;
+  padding: 6px 9px;
+}
+.note-save-preview {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #c9d9ef;
+  border-radius: 10px;
+}
+.note-save-preview > p {
+  color: #60718a;
+  font-size: 12px;
+}
+.graph-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  background: #050d20a8;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.graph-picker {
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+  background: #f8fafc;
+  color: #203047;
+  border: 1px solid #dce3ed;
+  border-radius: 18px;
+  padding: 28px;
+  box-shadow: 0 24px 80px #0005;
+}
+.graph-picker header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-picker h2 {
+  margin: 6px 0;
+  font-size: 26px;
+}
+.graph-picker > p {
+  line-height: 1.6;
+  color: #607087;
+}
+.graph-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 22px 0;
+}
+.graph-card {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+  color: #203047;
+  background: white;
+  border: 1px solid #d7e1ef;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+}
+.graph-card.active {
+  border-color: #527dd3;
+  background: #eaf1ff;
+  opacity: 1;
+}
+.graph-card span {
+  color: #65758b;
+  font-size: 12px;
+}
+.graph-picker form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.graph-picker label {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+.graph-picker input {
+  min-width: 180px;
+  padding: 10px;
+  border: 1px solid #c9d4e4;
+  border-radius: 7px;
+}
+.graph-picker-error {
+  color: #b63838 !important;
+}

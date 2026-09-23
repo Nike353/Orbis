@@ -141,3 +141,22 @@ hand — regenerate with:
 ```sh
 python3 tools/build_data_js.py
 ```
+
+## Web sources and note provenance
+
+The optional `paper.source_kind` is `paper`, `blog`, or `website`; omission retains
+research-paper semantics. All three use a `paper` graph node so existing links,
+cluster membership, discussion, and comparison work unchanged. For blog/website
+records, unknown authors may be `[]` and unknown `year` may be `null`. Research
+papers still require authors and a valid publication year. `paper.url` identifies
+the source, while full-text attestation preserves the actual fetched page URL.
+
+`node.notes` is Markdown with dollar-delimited LaTeX. Saving an answer stores the
+user-edited draft here. A research turn's `note_saves` array records destination
+`node_id`, `saved_at`, and `citations` separately from the visible note. Existing
+saved notes are not automatically rewritten.
+
+`data/graphs.json` is a catalog of `{id, name}` entries. IDs are UUID hex strings;
+each entry's independent workspace is `graphs/<id>/`. The original workspace is
+exposed as the implicit `main` graph. The complete workspace folder is the backup
+unit. Additional personal graphs and their catalog are Git-ignored by default.

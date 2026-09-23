@@ -514,9 +514,12 @@ class ResearchStore:
                 node_id = body.get("node_id")
                 if node_id in turn.get("saved_note_ids", []):
                     return {"ok": True}
-                text = turn["result"]["answer"]
-                text += "\n\nSources: " + "; ".join(c["node_id"] + ": " + c["evidence"] for c in turn["result"]["citations"])
-                text += "\n\nConversation: " + session["title"] + " · " + turn["created_at"]
+                text = body.get("text", turn["result"]["answer"])
+                require_text(text, "note", 100000)
+                turn.setdefault("note_saves", []).append({
+                    "node_id": node_id, "saved_at": utc_now(),
+                    "citations": turn["result"]["citations"],
+                })
                 changes = [{"action": "note", "node_id": node_id, "text": text, "reason": "Saved research answer"}]
                 turn.setdefault("saved_note_ids", []).append(node_id)
             else:

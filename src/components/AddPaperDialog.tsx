@@ -48,6 +48,7 @@ export function AddPaperDialog() {
   const reloadGraph = useWorkspaceStore((state) => state.load);
   const select = useWorkspaceStore((state) => state.select);
   const [url, setUrl] = useState('');
+  const [sourceKind, setSourceKind] = useState<'paper' | 'blog' | 'website'>('paper');
   const [hint, setHint] = useState('');
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [agentId, setAgentId] = useState<LocalAgent['id'] | ''>('');
@@ -135,6 +136,7 @@ export function AddPaperDialog() {
           }
           if (next.type === 'error') throw new Error(next.message);
         },
+        sourceKind,
       );
       if (outcome === 'inserted') {
         await reloadGraph();
@@ -178,7 +180,7 @@ export function AddPaperDialog() {
             </span>
             <div>
               <span className="eyebrow">Local agent</span>
-              <h2 id="add-paper-title">Add a paper</h2>
+              <h2 id="add-paper-title">Add a paper or web source</h2>
             </div>
           </div>
           <button
@@ -212,11 +214,28 @@ export function AddPaperDialog() {
             </span>
           </label>
           <label className="field">
-            <span>Paper URL</span>
+            <span>Source type</span>
+            <select
+              aria-label="Source type"
+              value={sourceKind}
+              disabled={running}
+              onChange={(e) => setSourceKind(e.target.value as typeof sourceKind)}
+            >
+              <option value="paper">Research paper</option>
+              <option value="blog">Blog post</option>
+              <option value="website">Web page</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>{sourceKind === 'paper' ? 'Paper URL' : 'Website URL'}</span>
             <input
               type="url"
               required
-              placeholder="https://arxiv.org/abs/..."
+              placeholder={
+                sourceKind === 'paper'
+                  ? 'https://arxiv.org/abs/...'
+                  : 'https://example.com/article'
+              }
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               disabled={running}

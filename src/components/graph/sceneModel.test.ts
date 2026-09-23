@@ -104,3 +104,29 @@ describe('literature universe scene model', () => {
     expect(selected.paperNodes.some((node) => node.dimmed)).toBe(true);
   });
 });
+
+it('gives larger fields room to grow and keeps paper centers separated', () => {
+  const dense = structuredClone(graph);
+  const prototype = dense.nodes.find((n) => n.type === 'paper')!;
+  for (let i = 0; i < 60; i++)
+    dense.nodes.push({
+      ...structuredClone(prototype),
+      id: `paper:dense-${i}`,
+      label: `Dense ${i}`,
+    });
+  const scene = buildSceneData(dense);
+  const field = scene.fields.find((f) => f.cluster.id === prototype.cluster)!;
+  const small = buildSceneData(graph).fields.find(
+    (f) => f.cluster.id === prototype.cluster,
+  )!;
+  expect(Math.max(field.radii.x, field.radii.y, field.radii.z)).toBeGreaterThan(
+    Math.max(small.radii.x, small.radii.y, small.radii.z),
+  );
+  for (let i = 0; i < scene.paperNodes.length; i++) {
+    for (let j = i + 1; j < scene.paperNodes.length; j++) {
+      const a = scene.paperNodes[i],
+        b = scene.paperNodes[j];
+      expect(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)).toBeGreaterThan(27);
+    }
+  }
+});

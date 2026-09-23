@@ -15,3 +15,7 @@ release/
 
 .venv/
 .litbench/
+
+# Personal independent libraries
+/graphs/
+/data/graphs.json

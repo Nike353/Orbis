@@ -25,7 +25,7 @@ export function LineageLane({ data }: NodeProps<LineageSceneNode>) {
           key={year}
           style={{ left: leftGutter + index * yearGap }}
         >
-          <span>{year}</span>
+          <span>{year || 'Undated'}</span>
         </div>
       ))}
     </section>

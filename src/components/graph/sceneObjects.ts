@@ -158,36 +158,6 @@ function orbitRing(
   );
 }
 
-function membershipRing(node: SceneNode, radius: number, opacity: number) {
-  const group = new Group();
-  const total = node.memberships.reduce((sum, membership) => sum + membership.weight, 0);
-  if (!total) return group;
-  const gap = node.memberships.length > 1 ? 0.095 : 0;
-  let cursor = 0;
-  for (const membership of node.memberships) {
-    const span = (membership.weight / total) * Math.PI * 2;
-    const arc = Math.max(0.1, span - gap);
-    const segment = new Mesh(
-      new TorusGeometry(radius, 0.19, 7, Math.max(18, Math.round(arc * 16)), arc),
-      new MeshBasicMaterial({
-        color: membership.cluster.type === 'cluster' ? node.clusterColor : '#ffffff',
-        transparent: true,
-        opacity,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    );
-    const material = segment.material as MeshBasicMaterial;
-    material.color.set(membership.color);
-    segment.rotation.z = cursor + gap / 2;
-    group.add(segment);
-    cursor += span;
-  }
-  group.rotation.x = Math.PI * 0.34;
-  group.rotation.y = Math.PI * 0.12;
-  return group;
-}
-
 function paperObject(node: SceneNode, selected: boolean, hovered: boolean) {
   const group = new Group();
   const emphasized = selected || hovered;
@@ -223,9 +193,7 @@ function paperObject(node: SceneNode, selected: boolean, hovered: boolean) {
   );
   group.add(glow);
 
-  group.add(membershipRing(node, radius * 1.42, 0.9 * dimOpacity));
-
-  if (node.status === 'proposed' || node.status === 'uncertain') {
+  if (emphasized && (node.status === 'proposed' || node.status === 'uncertain')) {
     const status = orbitRing(
       radius * 1.82,
       node.status === 'proposed' ? '#f2a451' : '#bd8ce6',
@@ -456,7 +424,7 @@ function fieldShell(field: SceneField) {
       color: field.color,
       transparent: true,
       opacity: field.dimmed ? 0.008 : field.selected ? 0.045 : 0.024,
-      wireframe: true,
+      wireframe: false,
       blending: AdditiveBlending,
       depthWrite: false,
     }),
@@ -567,8 +535,7 @@ export function createSceneBackdrop(scene: SceneData) {
     group.add(fieldParticles(field));
     group.add(fieldShell(field));
     const opacity = field.dimmed ? 0.02 : field.selected ? 0.28 : 0.12;
-    group.add(ellipseContour(field, 'xy', opacity));
-    group.add(ellipseContour(field, 'xz', opacity * 0.82));
+    if (field.selected) group.add(ellipseContour(field, 'xz', opacity));
     if (field.selected) group.add(ellipseContour(field, 'yz', opacity * 0.76));
   });
   if (scene.lens === 'time') group.add(timeAxis(scene));

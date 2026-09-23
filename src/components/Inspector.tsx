@@ -3,6 +3,7 @@ import { Check, ExternalLink, FileText, HelpCircle, Link2, Save, X } from 'lucid
 import { indexNodes } from '../domain/graph';
 import type { GraphEdge, GraphNode, ReviewStatus } from '../domain/schema';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { MarkdownNotes, MarkdownView } from './MarkdownNotes';
 import { GraphEditor } from './GraphEditor';
 
 function ReviewControls({
@@ -60,8 +61,11 @@ function NodeInspector({ node }: { node: GraphNode }) {
     setLabel(node.label);
     setDescription(node.description ?? '');
     setCluster(node.cluster ?? '');
+  }, [node.id, node.label, node.description, node.cluster]);
+
+  useEffect(() => {
     setNotes(node.notes ?? '');
-  }, [node]);
+  }, [node.id, node.notes]);
 
   useEffect(() => {
     let active = true;
@@ -123,9 +127,14 @@ function NodeInspector({ node }: { node: GraphNode }) {
           <p className="authors">{node.paper.authors.join(', ')}</p>
           <div className="paper-meta">
             <span>{node.paper.venue}</span>
-            <span>{node.paper.year}</span>
+            <span>{node.paper.year ?? 'Undated'}</span>
             <a href={node.paper.url} target="_blank" rel="noreferrer">
-              arXiv <ExternalLink size={12} />
+              {node.paper.source_kind === 'blog'
+                ? 'Blog'
+                : node.paper.source_kind === 'website'
+                  ? 'Website'
+                  : 'Source'}{' '}
+              <ExternalLink size={12} />
             </a>
           </div>
           <p>{node.paper.summary}</p>
@@ -143,7 +152,7 @@ function NodeInspector({ node }: { node: GraphNode }) {
       {sourceNote && (
         <details className="source-paper-note">
           <summary>Read paper notes</summary>
-          <div className="answer-text">{sourceNote}</div>
+          <MarkdownView text={sourceNote} />
         </details>
       )}
 
@@ -161,16 +170,14 @@ function NodeInspector({ node }: { node: GraphNode }) {
             rows={5}
           />
         </label>
-        <label>
-          <span>Personal notes</span>
-          <textarea
-            rows={7}
-            maxLength={100000}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Your understanding, questions, and saved research answers"
-          />
-        </label>
+        <MarkdownNotes
+          key={node.id}
+          value={notes}
+          onChange={(value) => {
+            setNotes(value);
+            updateNode(node.id, { notes: value });
+          }}
+        />
         {node.type !== 'cluster' && (
           <label>
             <span>Cluster</span>

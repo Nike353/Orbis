@@ -44,7 +44,7 @@ export function LineagePaperNode({ data, selected }: NodeProps<LineageSceneNode>
           <FileText size={12} aria-hidden="true" />
           Paper
         </span>
-        <span className="lineage-paper-year">{paper.year}</span>
+        <span className="lineage-paper-year">{paper.year ?? 'Undated'}</span>
       </header>
       <h3 title={paper.title}>{node.label}</h3>
       <p className="lineage-paper-byline">

@@ -1,3 +1,4 @@
+import { GraphSwitcher } from './GraphSwitcher';
 import {
   CloudOff,
   Database,
@@ -56,6 +57,7 @@ export function AppHeader() {
           <Network size={19} aria-hidden="true" />
         </span>
         <span className="brand-name">Orbis</span>
+        <GraphSwitcher />
         <span className="workspace-name">
           {graph.meta.title.replace(
             /^(?:Orbis|LitBench|ScholarSync)(?:\s*[—–:-]\s*|\s*$)/i,
@@ -127,7 +129,7 @@ export function AppHeader() {
           onClick={() => setAddPaperOpen(true)}
         >
           <Plus size={16} aria-hidden="true" />
-          <span>Add paper</span>
+          <span>Add source</span>
         </button>
         <button
           className="header-icon-button"

@@ -41,7 +41,7 @@ export function buildClusterMarkdown(graph: GraphData, clusterId: string) {
     lines.push(
       '',
       `### ${paper.title}`,
-      `*${paper.venue} · ${paper.year}*`,
+      `*${paper.venue} · ${paper.year ?? 'Undated'}*`,
       paper.authors.join(', '),
       `<${paper.url}>`,
       '',

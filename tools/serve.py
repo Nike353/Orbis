@@ -75,6 +75,8 @@ insert_lock = threading.Lock()
 graph_lock = threading.Lock()
 active_run_lock = threading.Lock()
 active_run = None
+graph_catalog = None
+active_graph_id = "main"
 queue_store = QueueStateStore()
 research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
 
@@ -144,7 +146,9 @@ def queue_finish(arxiv_id, status, result=None, reason=None,
     )
 
 
-def manual_record(url):
+def manual_record(url, source_kind="paper"):
+    if source_kind not in ("paper", "blog", "website"):
+        raise BridgeContractError("unknown source type")
     url = canonical_paper_url(url)
     parsed = urlparse(url)
     match = re.fullmatch(
@@ -153,6 +157,7 @@ def manual_record(url):
     )
     record = {
         "canonical_url": url,
+        "source_kind": source_kind,
         "query_id": "manual",
         "retrieval_match": {"query_ids": ["manual"], "matched_terms": []},
     }
@@ -180,7 +185,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             "default-src 'self'; script-src 'self'; style-src 'self' "
-            "'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; "
+            "'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; "
             "worker-src 'self' blob:; object-src 'none'; base-uri 'none'; "
             "frame-ancestors 'none'")
         super().end_headers()
@@ -226,6 +231,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/graphs":
+            if not self.same_origin_ok():
+                self.send_json(403, {"error": "cross-origin request rejected"})
+                return
+            try:
+                self.send_json(200, graph_catalog.listing(active_graph_id) if graph_catalog else {"graphs": []})
+            except (OSError, ValueError) as exc:
+                self.send_json(500, {"error": str(exc)})
+            return
         if parsed.path.startswith("/api/research") or parsed.path == "/api/notes":
             if not self.same_origin_ok():
                 self.send_json(403, {"error": "cross-origin request rejected"})
@@ -399,6 +413,27 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def do_POST(self):
+        if self.path == "/api/graphs" or self.path.startswith("/api/graphs/"):
+            if not self.same_origin_ok():
+                self.send_json(403, {"error": "cross-origin request rejected"})
+                return
+            if graph_catalog is None:
+                self.send_json(503, {"error": "Graph management is unavailable."})
+                return
+            body = self.read_json_body(4096)
+            if not isinstance(body, dict):
+                self.send_json(400, {"error": "invalid JSON body"})
+                return
+            try:
+                if self.path == "/api/graphs":
+                    self.send_json(201, graph_catalog.create(body.get("name")))
+                elif self.path.endswith("/open") and len(self.path.split("/")) == 5:
+                    self.send_json(200, graph_catalog.open(self.path.split("/")[3]))
+                else:
+                    self.send_json(404, {"error": "Unknown graph action."})
+            except (OSError, ValueError) as exc:
+                self.send_json(400, {"error": str(exc)})
+            return
         if research_store.journal.exists():
             self.send_json(409, {"error": "A graph transaction needs recovery. Restart the server before continuing."})
             return
@@ -458,7 +493,7 @@ class Handler(SimpleHTTPRequestHandler):
                     self.send_json(
                         400, {"error": "url must be a valid http(s) URL"})
                     return
-                record = manual_record(url)
+                record = manual_record(url, body.get("source_kind", "paper"))
         except BridgeContractError as exc:
             self.send_json(400, {"error": str(exc)})
             return
@@ -723,15 +758,9 @@ class Handler(SimpleHTTPRequestHandler):
                 clear_active_run(proc)
 
 
-def main():
+def configure_workspace(root, use_environment=True):
     global ROOT, GRAPH_JSON, queue_store, research_store
-    parser = argparse.ArgumentParser(description="Orbis local server")
-    parser.add_argument("--port", type=int, help="Port to bind; defaults to an available port starting at 8000")
-    parser.add_argument("--workspace", type=Path, help="Personal workspace directory; initializes an empty library when missing")
-    args = parser.parse_args()
-
-    if args.workspace:
-        ROOT = args.workspace.expanduser().resolve()
+    ROOT = Path(root).resolve()
     try:
         from workspace import initialize_workspace, lock_workspace
     except ModuleNotFoundError:
@@ -740,10 +769,23 @@ def main():
     workspace_lock = lock_workspace(ROOT)
     GRAPH_JSON = ROOT / "data" / "graph.json"
     queue_store = QueueStateStore(
-        os.environ.get("LITBENCH_BATCH_PATH", ROOT / "data/imports/adaptation-appendix-b-051-106.json"),
-        os.environ.get("LITBENCH_STATE_PATH", ROOT / "data/imports/adaptation-appendix-b-051-106-state.json"))
+        (os.environ.get("LITBENCH_BATCH_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106.json",
+        (os.environ.get("LITBENCH_STATE_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106-state.json")
     research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
     research_store.recover()
+    return workspace_lock
+
+
+def main():
+    global ROOT, graph_catalog
+    parser = argparse.ArgumentParser(description="Orbis local server")
+    parser.add_argument("--port", type=int, help="Port to bind; defaults to an available port starting at 8000")
+    parser.add_argument("--workspace", type=Path, help="Personal workspace directory; initializes an empty library when missing")
+    args = parser.parse_args()
+
+    if args.workspace:
+        ROOT = args.workspace.expanduser().resolve()
+    workspace_lock = configure_workspace(ROOT)
 
     if not (DIST / "index.html").exists():
         print(
@@ -775,6 +817,12 @@ def main():
                 raise
     else:
         raise SystemExit("No requested port is available. Try ./start.sh --port 8100.")
+    try:
+        from graph_catalog import GraphCatalog
+    except ModuleNotFoundError:
+        from tools.graph_catalog import GraphCatalog
+    graph_catalog = GraphCatalog(ROOT, Path(__file__))
+    graph_catalog.register_main(server)
     print(
         "Orbis serving on http://127.0.0.1:%d  (Ctrl-C to stop)"
         % server.server_address[1], flush=True)
@@ -783,6 +831,7 @@ def main():
     except KeyboardInterrupt:
         print("\nbye")
     finally:
+        graph_catalog.close()
         cancel_active_run()
         for event in list(research_store.active.values()):
             event.set()

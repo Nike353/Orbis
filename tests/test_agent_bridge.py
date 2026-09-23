@@ -168,6 +168,21 @@ class IsolatedInsertionTests(unittest.TestCase):
         self.assertTrue(
             (self.root / "papers" / "test2026-isolated.md").exists())
 
+    def test_blog_insertion_with_unknown_metadata_and_source_attestation(self):
+        record = {"canonical_url": "https://example.org/blog/world-models", "source_kind": "blog"}
+        with IsolatedInsertion(self.root) as insertion:
+            graph, paper_id = self.write_valid_output(insertion)
+            node = next(n for n in graph["nodes"] if n["id"] == paper_id)
+            node["paper"].pop("arxiv")
+            node["paper"].update(url=record["canonical_url"], source_kind="blog", authors=[], year=None)
+            atomic_write_graph(insertion.workspace, graph)
+            self.assertEqual(insertion.verify_inserted(record, paper_id), [])
+            source = {"url": record["canonical_url"], "format": "publisher-html",
+                      "evidence": "Article body: architecture and limitations sections."}
+            self.assertEqual(validate_full_text_source(record, source, [source["url"]]), [])
+            self.assertTrue(validate_full_text_source(record, source, []))
+            self.assertIn("article/page body", build_prompt(record, ""))
+
     def test_insertion_accepts_equivalent_urls_but_rejects_other_papers(self):
         with IsolatedInsertion(self.root) as insertion:
             graph, paper_id = self.write_valid_output(insertion)

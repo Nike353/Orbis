@@ -100,6 +100,18 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ResearchError, "stale"):
             self.store.decision(session["id"], stale["id"], {"action": "apply", "base_revision": 2})
 
+    def test_saved_note_is_editable_content_without_conversation_boilerplate(self):
+        session = self.session()
+        turn = self.run_turn(session)
+        text = "## My conclusion\n\nThe loss is $L = x^2$."
+        self.store.decision(session["id"], turn["id"], {
+            "action": "save_note", "node_id": "paper:a", "base_revision": 0, "text": text})
+        node = next(n for n in self.store.graph()["nodes"] if n["id"] == "paper:a")
+        self.assertEqual(node["notes"], text)
+        self.assertNotIn("Conversation:", node["notes"])
+        stored = self.store.find(self.store.read(), session["id"])["turns"][-1]
+        self.assertTrue(stored["note_saves"][0]["citations"])
+
     def test_note_saving_is_idempotent_and_survives_crash_between_graph_and_history(self):
         session = self.session()
         turn = self.run_turn(session)

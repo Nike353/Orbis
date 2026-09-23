@@ -133,15 +133,20 @@ def validate(data):
                 if not is_non_empty_string(paper.get("title")):
                     errors.append(
                         f"node {nid}: paper title must be a non-empty string")
+                source_kind = paper.get("source_kind", "paper")
+                if source_kind not in ("paper", "blog", "website"):
+                    errors.append(f"node {nid}: invalid source_kind")
+                web_source = source_kind in ("blog", "website")
                 authors = paper.get("authors")
-                if (not isinstance(authors, list) or not authors
+                if (not isinstance(authors, list) or (not authors and not web_source)
                         or not all(is_non_empty_string(author)
                                    for author in authors)):
                     errors.append(
                         f"node {nid}: paper authors must be a non-empty "
                         "string array")
                 year = paper.get("year")
-                if (not isinstance(year, int) or isinstance(year, bool)
+                if not (web_source and year is None) and (
+                        not isinstance(year, int) or isinstance(year, bool)
                         or not 1900 <= year <= 2200):
                     errors.append(
                         f"node {nid}: paper year must be an integer in "

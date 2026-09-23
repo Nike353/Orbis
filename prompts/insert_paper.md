@@ -1,4 +1,16 @@
-# Insert a Paper into the LitBench Graph
+# Insert a Research Source into the Orbis Graph
+
+## Web-source imports
+
+When the request specifies `source_kind: blog` or `website`, apply the same
+reviewed insertion workflow to the actual article or web page. Read its full
+body; an article page is itself full text and does not need an academic PDF.
+Use a `paper` node for compatibility, with `paper.source_kind` set to the requested
+kind. Keep the submitted URL as `paper.url`; attest the exact fetched article URL
+using `publisher-html` (or `publisher-pdf` for a PDF). Do not invent metadata:
+unknown authors are `[]`, an unknown publication year is `null`, and the venue
+can be the website name. Do not add `paper.arxiv` for a non-arXiv source.
+The academic metadata requirements below apply only to research papers.
 
 You are integrating a new research paper into a local literature graph that a
 researcher curates by hand. Your job: read the paper, build a paper card,

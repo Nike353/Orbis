@@ -48,10 +48,10 @@ again. Changed frontend source is rebuilt automatically.
 
 </details>
 
-### Add your first paper
+### Add your first source
 
-Your library starts empty. Click **Add paper**, paste an arXiv URL, and choose
-an agent. Orbis reads the paper and proposes a place for it in your graph,
+Your library starts empty. Click **Add source**, choose **Research paper**, **Blog post**, or **Web page**,
+paste its URL, and choose an agent. Orbis reads the paper and proposes a place for it in your graph,
 along with methods and relationships. Review the proposals, accept what belongs,
 and **Save changes**.
 
@@ -72,8 +72,15 @@ focus a field, or reveal the methods and concepts connecting the work.
 ## Make the library yours
 
 Select a paper to read its summary, findings, original notes, and connections.
-Add your own notes, organize papers into clusters, or create a relationship with
-an explanation and supporting evidence.
+Write your own notes with Markdown headings, lists, tables, code, and LaTeX
+equations. Switch between **Write** and **Preview**, then **Save changes**.
+Organize sources into clusters, or create a relationship with an explanation
+and supporting evidence.
+
+Use the folder button beside **Orbis** to create and switch between independent
+graphs—for example, robot learning, world models, and a general reading list.
+Each graph has its own sources, notes, conversations, review state, and import queue.
+Save pending edits before switching.
 
 ![The paper inspector with notes, research actions, and editable fields](docs/images/paper.png)
 
@@ -85,7 +92,7 @@ an explanation and supporting evidence.
 | Compare approaches                 | Open **Compare**, choose 2–20 papers, and pick your columns.       |
 | Ask a specific comparison question | Add a custom column, such as “What changes at deployment?”         |
 | Check an answer                    | Expand the cited sources or the evidence attached to a table cell. |
-| Remember an insight                | Use **Save answer as note** to add it to a research record.        |
+| Remember an insight                | Use **Review answer as note**, edit the draft, and save it.        |
 | Reorganize the graph               | Ask for a change, inspect the proposal, then accept or reject it.  |
 | Take your work elsewhere           | Export comparisons as CSV and conversations as Markdown or JSON.   |
 
@@ -113,9 +120,15 @@ To use a different library:
 sh start.sh --workspace /path/to/my-library
 ```
 
-To back up your work, stop Orbis and copy that entire library folder.
+Additional graphs live under `graphs/` in that library folder; their names are
+stored in `data/graphs.json`. To back up your work, stop Orbis and copy the entire
+library folder, including those directories.
 Application updates do not replace it. AI features send selected paper context
 to your configured provider; see [data handling](SECURITY.md) for details.
+
+For planned device sync, mobile access, and model controls, see the
+[design proposal](docs/SYNC_AND_MOBILE.md). These are future capabilities, not
+currently enabled remote access.
 
 ## Need a hand?
 

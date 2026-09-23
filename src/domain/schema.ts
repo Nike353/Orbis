@@ -27,9 +27,10 @@ export const arxivMetadataSchema = z.object({
 });
 
 export const paperCardSchema = z.object({
+  source_kind: z.enum(['paper', 'blog', 'website']).optional(),
   title: z.string().min(1),
-  authors: z.array(z.string()).min(1),
-  year: z.number().int().min(1900).max(2200),
+  authors: z.array(z.string().min(1)),
+  year: z.number().int().min(1900).max(2200).nullable(),
   venue: z.string(),
   url: z.string().url(),
   summary: z.string(),
@@ -57,6 +58,17 @@ export const graphNodeSchema = baseNodeSchema.superRefine((node, ctx) => {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Paper nodes require a paper card',
+      path: ['paper'],
+    });
+  }
+  if (
+    node.paper &&
+    (!node.paper.source_kind || node.paper.source_kind === 'paper') &&
+    (!node.paper.authors.length || node.paper.year === null)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Papers require authors and publication year',
       path: ['paper'],
     });
   }

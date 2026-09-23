@@ -56,6 +56,7 @@ export interface SceneNode extends Point3 {
   dimmed: boolean;
   semanticPosition: Point3;
   timePosition: Point3;
+  focusDistance?: number;
   primaryCount?: number;
   bridgeCount?: number;
   conceptCount?: number;
@@ -203,6 +204,14 @@ function computeClusterAnchors(
     overlap.set(key, (overlap.get(key) ?? 0) + edge.confidence * 0.32);
   }
 
+  const clusterSizes = new Map(
+    clusters.map((cluster) => [
+      cluster.id,
+      graph.nodes.filter((node) => node.type === 'paper' && node.cluster === cluster.id)
+        .length,
+    ]),
+  );
+  const footprint = (id: string) => 48 + Math.cbrt(clusterSizes.get(id) ?? 0) * 25;
   const maximumOverlap = Math.max(1, ...overlap.values());
   const initial = clusters.map((_, index) => {
     const y = 1 - ((index + 0.5) / Math.max(1, clusters.length)) * 2;
@@ -222,7 +231,11 @@ function computeClusterAnchors(
       for (let right = left + 1; right < clusters.length; right += 1) {
         const key = [clusters[left].id, clusters[right].id].sort().join('|');
         const similarity = (overlap.get(key) ?? 0) / maximumOverlap;
-        const desiredDistance = 112 + (1 - Math.sqrt(similarity)) * 128;
+        const desiredDistance =
+          footprint(clusters[left].id) +
+          footprint(clusters[right].id) +
+          80 +
+          (1 - Math.sqrt(similarity)) * 120;
         const a = positions[left];
         const b = positions[right];
         let dx = b.x - a.x;
@@ -327,7 +340,7 @@ function computePaperPositions(
       group.findIndex((candidate) => candidate.id === paper.id),
     );
     const direction = seededDirection(paper.id);
-    const spread = 15 + Math.sqrt(index + 1) * 8.5;
+    const spread = 25 + Math.cbrt(index + 1) * 27;
     const year = paper.paper?.year ?? yearCenter;
     base.set(paper.id, {
       x: center.x + direction.x * spread,
@@ -390,7 +403,7 @@ function computePaperPositions(
         let dy = b.y - a.y;
         let dz = b.z - a.z;
         let distance = Math.hypot(dx, dy, dz);
-        const minimum = 19;
+        const minimum = 32;
         if (distance >= minimum) continue;
         if (distance < 0.001) {
           const direction = seededDirection(`${papers[left].id}:${papers[right].id}`);
@@ -414,9 +427,9 @@ function computePaperPositions(
       const position = positions.get(paper.id)!;
       const origin = base.get(paper.id)!;
       const change = movement.get(paper.id)!;
-      position.x += change.x + (origin.x - position.x) * 0.022;
-      position.y += change.y + (origin.y - position.y) * 0.022;
-      position.z += change.z + (origin.z - position.z) * 0.022;
+      position.x += change.x + (origin.x - position.x) * 0.008;
+      position.y += change.y + (origin.y - position.y) * 0.008;
+      position.z += change.z + (origin.z - position.z) * 0.008;
     }
   }
   return positions;
@@ -608,12 +621,9 @@ function fieldForCluster(
     { x: 0, y: 0, z: 0 },
   );
   const radii = {
-    x:
-      lens === 'time'
-        ? Math.max(44, extents.x + 24)
-        : Math.min(92, Math.max(38, extents.x + 22)),
-    y: Math.min(82, Math.max(34, extents.y + 20)),
-    z: Math.min(88, Math.max(36, extents.z + 22)),
+    x: lens === 'time' ? Math.max(44, extents.x + 24) : Math.max(42, extents.x + 26),
+    y: Math.max(38, extents.y + 24),
+    z: Math.max(40, extents.z + 26),
   };
 
   return {
@@ -905,6 +915,10 @@ export function buildSceneData(
       degree: field.paperCount,
       paperDegree: 0,
       radius: 7,
+      focusDistance: Math.max(
+        205,
+        Math.max(field.radii.x, field.radii.y, field.radii.z) * 3.2,
+      ),
       labelVisible: true,
       selected,
       highlighted,

@@ -8,13 +8,19 @@ signed-in Codex or Claude Code CLI.
 
 ## Add and connect papers
 
-Use **Add paper**, paste a paper URL, and choose an agent. The insertion workflow
+Use **Add source**, choose Research paper, Blog post, or Web page, paste a URL,
+and choose an agent. Blogs and websites use the actual article body as full text;
+unknown authors or dates remain unknown rather than being invented. The insertion workflow
 retrieves full text in a disposable workspace and proposes a paper, concepts,
 cluster placement, and evidence-backed relationships. Review the proposals in
 the queue. An empty library can accept its first paper without existing links.
 
 Select a record to inspect its original Markdown source notes and your personal
-notes. Edit names, notes, or primary cluster in the inspector, then **Save changes**.
+notes. Personal notes offer **Write** and **Preview**, with a formatting toolbar,
+Markdown tables and code blocks, inline math (`$E=mc^2$`), and display math
+(`$$` on lines before and after an equation). Raw HTML is not rendered.
+Edit names or primary cluster with **Apply edits**; notes update the working graph
+as you type. Use **Save changes** to persist your work.
 The Library panel also offers **Create cluster, method, or connection**. A manual
 connection requires a source, target, relation, explanation, and evidence.
 Use `belongs_to` from a paper to a cluster to add a secondary membership.
@@ -84,3 +90,29 @@ For a complete backup, stop the server and copy the entire workspace, including
 - Source builds need Node.js 20.19+ and npm. Prebuilt runtime archives only need
   Python 3.10+ plus an agent for AI features. macOS and Linux are supported;
   native Windows is not supported by the current process and file-lock code.
+
+## Keep separate graphs
+
+Click the folder beside **Orbis**, name a graph, and choose **Create empty graph**.
+Click **Open graph** on its card. Your existing library remains available in the
+same chooser. Save unsaved graph edits first; switching is blocked until you do.
+
+Every graph owns its graph data, paper files, conversations, proposals, and import
+queue. A run in one graph does not share another graph's write lock. Locally each
+open graph uses a separate loopback port; return through the chooser rather than
+bookmarking those temporary ports. Restart from the main workspace's launch URL.
+
+## Keep useful answers without conversation clutter
+
+Choose **Review answer as note**, select the destination record, and edit the
+draft before choosing **Save edited note**. Only the draft text is appended to
+your personal notes. The conversation, citations, and saved-note provenance
+remain in research history. Saving the same turn to the same record is idempotent.
+
+## Explore a larger universe
+
+Paper markers no longer have permanent orbital rings. Cluster spacing grows with
+membership and field boundaries grow to fit their contents. Select a field to
+focus it, or filter to that field to explore just its sources and relationships.
+The focus camera fits the field's current extent. Switch to 2D Lineages for a
+chronological view; web sources without dates appear under **Undated**.

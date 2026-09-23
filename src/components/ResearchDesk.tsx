@@ -1,3 +1,4 @@
+import { MarkdownNotes, MarkdownView } from './MarkdownNotes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -52,6 +53,9 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
   const [pending, setPending] = useState(false);
   const [archived, setArchived] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [noteDraft, setNoteDraft] = useState<{ turn: ResearchTurn; text: string } | null>(
+    null,
+  );
   const [noteTarget, setNoteTarget] = useState(researchScope[0] ?? '');
   const currentId = useRef<string | null>(null);
   const labels = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n.label])), [graph]);
@@ -178,8 +182,8 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
       setPending(false);
     }
   }
-  async function decide(turn: ResearchTurn, action: string) {
-    if (!current) return;
+  async function decide(turn: ResearchTurn, action: string, text?: string) {
+    if (!current) return false;
     setPending(true);
     setError('');
     try {
@@ -187,6 +191,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
         throw new Error('Save your graph edits before applying an answer.');
       await researchRequest(`/${current.id}/decide/${turn.id}`, {
         action,
+        ...(text === undefined ? {} : { text }),
         node_id: noteTarget,
         base_revision: graph.meta.revision,
       });
@@ -196,8 +201,10 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
         action === 'reject' ? 'Proposal rejected.' : 'Saved to your library.',
         'success',
       );
+      return true;
     } catch (e) {
       setError((e as Error).message);
+      return false;
     } finally {
       setPending(false);
     }
@@ -364,7 +371,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                     <strong>{n.label}</strong>
                     <small>
                       {n.type}
-                      {n.paper ? ` · ${n.paper.year}` : ''}
+                      {n.paper ? ` · ${n.paper.year ?? 'Undated'}` : ''}
                     </small>
                   </span>
                 </label>
@@ -469,7 +476,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                     {turn.error && <p className="research-warning">{turn.error}</p>}
                     {turn.result && (
                       <>
-                        <div className="answer-text">{turn.result.answer}</div>
+                        <MarkdownView text={turn.result.answer} />
                         {turn.result.cells.length > 0 && (
                           <>
                             <div className="comparison-scroll">
@@ -610,6 +617,37 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                             )}
                           </section>
                         )}
+                        {noteDraft?.turn.id === turn.id && (
+                          <div className="note-save-preview">
+                            <MarkdownNotes
+                              value={noteDraft.text}
+                              onChange={(text) => setNoteDraft({ ...noteDraft, text })}
+                              label="Edit note before saving"
+                            />
+                            <p>
+                              Only this text is added. The conversation and citations remain
+                              in research history.
+                            </p>
+                            <button
+                              className="button primary"
+                              disabled={
+                                pending || dirty || !noteTarget || !noteDraft.text.trim()
+                              }
+                              onClick={async () => {
+                                if (await decide(turn, 'save_note', noteDraft.text))
+                                  setNoteDraft(null);
+                              }}
+                            >
+                              Save edited note
+                            </button>
+                            <button
+                              className="button secondary"
+                              onClick={() => setNoteDraft(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                         <div className="save-answer">
                           <label>
                             Save answer to notes
@@ -637,11 +675,13 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                               dirty ||
                               turn.saved_note_ids?.includes(noteTarget)
                             }
-                            onClick={() => void decide(turn, 'save_note')}
+                            onClick={() =>
+                              setNoteDraft({ turn, text: turn.result!.answer })
+                            }
                           >
                             {turn.saved_note_ids?.includes(noteTarget)
                               ? 'Saved'
-                              : 'Save answer as note'}
+                              : 'Review answer as note'}
                           </button>
                         </div>
                       </>

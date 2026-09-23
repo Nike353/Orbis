@@ -328,7 +328,9 @@ test.describe('Orbis product workspace', () => {
     test.skip(testInfo.project.name !== 'desktop', 'desktop agent workflow');
     await waitForWorkspace(page);
     await page.getByRole('button', { name: 'Add paper', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Add a paper' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Add a paper or web source' }),
+    ).toBeVisible();
     await expect(page.getByLabel('Agent')).toHaveValue('claude');
     await page
       .getByRole('textbox', { name: 'Paper URL' })

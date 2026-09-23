@@ -152,8 +152,8 @@ export function buildLineageMapScene(
   const visiblePapers = visibleGraph.nodes.filter(isPaperNode);
   const visiblePaperIds = new Set(visiblePapers.map((paper) => paper.id));
   const paperById = new Map(allPapers.map((paper) => [paper.id, paper]));
-  const years = [...new Set(allPapers.map((paper) => paper.paper.year))].sort(
-    (left, right) => left - right,
+  const years = [...new Set(allPapers.map((paper) => paper.paper.year ?? 0))].sort(
+    (left, right) => (left || 9999) - (right || 9999),
   );
   const yearIndex = new Map(years.map((year, index) => [year, index]));
   const { lanes, laneById } = clusterLanes(graph);
@@ -220,15 +220,16 @@ export function buildLineageMapScene(
       )
       .sort(
         (left, right) =>
-          left.paper.year - right.paper.year || left.label.localeCompare(right.label),
+          (left.paper.year ?? 9999) - (right.paper.year ?? 9999) ||
+          left.label.localeCompare(right.label),
       );
     if (!papers.length) continue;
 
     const yearBuckets = new Map<number, PaperGraphNode[]>();
     for (const paper of papers) {
-      const bucket = yearBuckets.get(paper.paper.year) ?? [];
+      const bucket = yearBuckets.get(paper.paper.year ?? 0) ?? [];
       bucket.push(paper);
-      yearBuckets.set(paper.paper.year, bucket);
+      yearBuckets.set(paper.paper.year ?? 0, bucket);
     }
     const maxStack = Math.max(
       1,
@@ -296,7 +297,7 @@ export function buildLineageMapScene(
             selected: selection?.kind === 'node' && selection.id === paper.id,
             draggable: false,
             connectable: false,
-            ariaLabel: `Paper: ${paper.label}, ${paper.paper.year}`,
+            ariaLabel: `Paper: ${paper.label}, ${paper.paper.year ?? 'undated'}`,
             zIndex: connectedIds.has(paper.id) ? 5 : 3,
           });
         });

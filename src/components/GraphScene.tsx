@@ -347,7 +347,7 @@ export function GraphScene() {
     if (!selection) return;
     if (selection.kind === 'node') {
       const node = sceneData.nodes.find((candidate) => candidate.id === selection.id);
-      if (node) focusPoint(nodePosition(node), node.kind === 'field' ? 205 : 112);
+      if (node) focusPoint(nodePosition(node), node.focusDistance ?? 112);
       return;
     }
     const link = sceneData.relationLinks.find((candidate) => candidate.id === selection.id);
@@ -370,7 +370,7 @@ export function GraphScene() {
   const focusSelection = useCallback(() => {
     if (selection?.kind === 'node') {
       const node = sceneData.nodes.find((candidate) => candidate.id === selection.id);
-      if (node) focusPoint(nodePosition(node), node.kind === 'field' ? 205 : 112);
+      if (node) focusPoint(nodePosition(node), node.focusDistance ?? 112);
       return;
     }
     if (selection?.kind === 'edge') {
@@ -394,7 +394,7 @@ export function GraphScene() {
     }
     if (activeCluster) {
       const field = sceneData.fieldNodes.find((node) => node.id === activeCluster.id);
-      if (field) focusPoint(nodePosition(field), 205);
+      if (field) focusPoint(nodePosition(field), field.focusDistance ?? 205);
     }
   }, [
     activeCluster,

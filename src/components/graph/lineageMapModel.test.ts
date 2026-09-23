@@ -61,7 +61,7 @@ describe('2D lineage map scene model', () => {
 
     for (const node of paperNodes) {
       if (node.data.kind !== 'paper') continue;
-      const column = scene.years.indexOf(node.data.node.paper.year);
+      const column = scene.years.indexOf(node.data.node.paper.year ?? 0);
       expect(node.position.x).toBe(LEFT_GUTTER + column * YEAR_GAP);
     }
     expect(
@@ -109,4 +109,14 @@ describe('2D lineage map scene model', () => {
       selected.nodes.some((node) => node.data.kind === 'paper' && node.data.dimmed),
     ).toBe(true);
   });
+});
+
+it('places undated web sources in an explicit undated column', () => {
+  const copy = structuredClone(graph);
+  const paper = copy.nodes.find((n) => n.type === 'paper')!;
+  paper.paper!.source_kind = 'blog';
+  paper.paper!.year = null;
+  paper.paper!.authors = [];
+  const scene = buildLineageMapScene(copy, copy, null);
+  expect(scene.years).toContain(0);
 });

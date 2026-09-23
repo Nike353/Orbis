@@ -52,6 +52,7 @@ export async function runAgentInsertion(
   arxivId: string | null,
   signal: AbortSignal,
   onEvent: (event: AgentEvent) => void,
+  sourceKind: 'paper' | 'blog' | 'website' = 'paper',
 ) {
   const response = await fetch('/api/insert', {
     method: 'POST',
@@ -60,6 +61,7 @@ export async function runAgentInsertion(
       agent,
       url,
       hint,
+      source_kind: sourceKind,
       ...(batchId && arxivId ? { batch_id: batchId, arxiv_id: arxivId } : {}),
     }),
     signal,
