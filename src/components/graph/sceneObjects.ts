@@ -387,7 +387,7 @@ function ellipseContour(field: SceneField, plane: 'xy' | 'xz' | 'yz', opacity: n
 }
 
 function fieldParticles(field: SceneField) {
-  // Soft, low-contrast spiral dust gives each field a galaxy identity. These
+  // Soft, scattered stardust gives each field a galaxy identity. These
   // background points are smaller and dimmer than the interactive paper stars.
   const galaxy = new Group();
   const canvas = document.createElement('canvas');
@@ -403,15 +403,10 @@ function fieldParticles(field: SceneField) {
   const texture = new CanvasTexture(canvas);
   const positions: number[] = [];
   const count = 140 + Math.min(280, field.paperCount * 8);
-  const phase = seeded(field.cluster.id, 0x9e3779b9) * Math.PI * 2;
   for (let index = 0; index < count; index += 1) {
     const key = `${field.cluster.id}:dust:${index}`;
     const radius = Math.sqrt(seeded(key, 0xc2b2ae35)) * 0.94;
-    const theta =
-      phase +
-      ((index % 3) * Math.PI * 2) / 3 +
-      radius * 5 +
-      (seeded(key, 0x9e3779b9) - 0.5) * 0.5;
+    const theta = seeded(key, 0x9e3779b9) * Math.PI * 2;
     positions.push(
       field.center.x + Math.cos(theta) * radius * field.radii.x,
       field.center.y + Math.sin(theta) * radius * field.radii.y,
@@ -448,29 +443,6 @@ function fieldParticles(field: SceneField) {
   haze.position.set(field.center.x, field.center.y, field.center.z);
   haze.scale.set(field.radii.x * 2.1, field.radii.y * 2.1, 1);
   galaxy.add(haze);
-  for (let arm = 0; arm < 3; arm += 1) {
-    const points = Array.from({ length: 72 }, (_, index) => {
-      const radius = 0.12 + (index / 71) * 0.76;
-      const theta = phase + (arm * Math.PI * 2) / 3 + radius * 5;
-      return new Vector3(
-        field.center.x + Math.cos(theta) * radius * field.radii.x,
-        field.center.y + Math.sin(theta) * radius * field.radii.y,
-        field.center.z,
-      );
-    });
-    galaxy.add(
-      new Line(
-        new BufferGeometry().setFromPoints(points),
-        new LineBasicMaterial({
-          color: field.color,
-          transparent: true,
-          opacity: field.dimmed ? 0.008 : field.selected ? 0.17 : 0.075,
-          blending: AdditiveBlending,
-          depthWrite: false,
-        }),
-      ),
-    );
-  }
   return galaxy;
 }
 

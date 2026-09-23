@@ -137,7 +137,7 @@ address. They do not change your global CLI configuration or a run already in
 progress. Research answers and Markdown exports include the requested settings;
 when CLI default is selected, the resolved model is managed by that CLI.
 
-Cluster galaxies use soft spiral dust, a faint central glow, and subtle arms.
+Cluster galaxies use softly scattered stardust and a faint central glow.
 Their decoration dims when another field is focused, preserving the visibility
 of paper markers and evidence paths. Wider spacing and dynamic field sizing
 remain in place.
