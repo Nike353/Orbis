@@ -1,3 +1,4 @@
+import type { AgentSettings } from './agentBridge';
 import type { GraphNode, GraphEdge } from '../domain/schema';
 
 export interface ResearchResult {
@@ -10,6 +11,7 @@ export interface ResearchTurn {
   id: string;
   question: string;
   agent: string;
+  settings?: AgentSettings;
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
   created_at: string;
   base_revision: number;
@@ -72,7 +74,7 @@ export function sessionMarkdown(
     lines.push(
       `## ${turn.question}`,
       '',
-      `${turn.agent} · ${turn.created_at} · ${turn.status}`,
+      `${turn.agent}${turn.settings ? ` · ${turn.settings.model || 'CLI model'} / ${turn.settings.effort || 'CLI effort'}` : ''} · ${turn.created_at} · ${turn.status}`,
       '',
     );
     if (!turn.result) {

@@ -431,6 +431,13 @@ export function GraphScene() {
     select({ kind: 'node', id: sceneData.paperNodes[nextIndex].id });
   }
 
+  function membershipEmphasized(link: SceneLink) {
+    return (
+      link.paperId === hoveredPaperId ||
+      (selection?.kind === 'node' && selection.id === link.paperId)
+    );
+  }
+
   function membershipVisible(link: SceneLink) {
     return (
       link.kind === 'membership' &&
@@ -613,7 +620,7 @@ export function GraphScene() {
           }
           linkColor={(link: GraphLink) => {
             if (link.kind === 'membership') {
-              return rgba(link.color, link.highlighted ? 0.9 : 0.56);
+              return rgba(link.color, membershipEmphasized(link) ? 0.85 : 0.24);
             }
             if (link.status === 'proposed') {
               return link.highlighted ? '#f3a95d' : 'rgba(217, 149, 63, 0.26)';
@@ -628,11 +635,11 @@ export function GraphScene() {
           }}
           linkWidth={(link: GraphLink) =>
             link.kind === 'membership'
-              ? link.highlighted
+              ? membershipEmphasized(link)
                 ? 1.65
                 : link.membershipRole === 'primary'
-                  ? 0.72
-                  : 0.5
+                  ? 0.48
+                  : 0.32
               : link.highlighted
                 ? 3.2
                 : link.crossCluster

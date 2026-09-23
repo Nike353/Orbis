@@ -1,3 +1,5 @@
+import { AgentModelSettings } from './AgentModelSettings';
+import { useAgentSettings } from '../store/agentSettings';
 import { MarkdownNotes, MarkdownView } from './MarkdownNotes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -49,6 +51,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
   const [question, setQuestion] = useState('');
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [agent, setAgent] = useState('');
+  const { choice: settings } = useAgentSettings(agent);
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [archived, setArchived] = useState(false);
@@ -83,7 +86,12 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     void refreshList().catch((e) => setError(String(e.message)));
     void getBridgeHealth().then((value) => {
       setHealth(value);
-      setAgent(value?.default_agent ?? '');
+      const stored = window.localStorage.getItem('litbench.agent');
+      setAgent(
+        value?.agents.find((a) => a.id === stored && a.available)?.id ??
+          value?.default_agent ??
+          '',
+      );
     });
   }, [refreshList]);
   useEffect(() => {
@@ -172,6 +180,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
       await researchRequest(`/${session.id}/turns`, {
         question: message,
         agent,
+        settings,
         base_revision: graph.meta.revision,
       });
       setQuestion('');
@@ -451,6 +460,12 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                   <div className="research-answer">
                     <div className="answer-meta">
                       <strong>{turn.agent === 'codex' ? 'Codex' : 'Claude Code'}</strong>
+                      {turn.settings && (
+                        <span>
+                          {turn.settings.model || 'CLI model'} ·{' '}
+                          {turn.settings.effort || 'CLI effort'}
+                        </span>
+                      )}
                       <span>
                         {turn.status}
                         {turn.duration_s !== undefined ? ` · ${turn.duration_s}s` : ''}
@@ -718,13 +733,22 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
               }
             />
           </label>
+          <AgentModelSettings
+            key={agent}
+            agent={health?.agents.find((a) => a.id === agent)}
+            disabled={pending || running}
+          />
           <div className="composer-footer">
             <label>
               Agent{' '}
               <select
                 aria-label="Research agent"
                 value={agent}
-                onChange={(e) => setAgent(e.target.value)}
+                disabled={pending || running}
+                onChange={(e) => {
+                  setAgent(e.target.value);
+                  window.localStorage.setItem('litbench.agent', e.target.value);
+                }}
               >
                 {!agent && <option value="">Choose an agent</option>}
                 {health?.agents.map((a) => (

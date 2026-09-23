@@ -100,6 +100,22 @@ class ResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ResearchError, "stale"):
             self.store.decision(session["id"], stale["id"], {"action": "apply", "base_revision": 2})
 
+    def test_selected_run_settings_are_persisted_and_invalid_settings_do_not_start(self):
+        session = self.session()
+        settings = {'model': 'gpt-5.6-sol', 'effort': 'medium'}
+        turn = self.store.start(session['id'], {'question': 'Explain', 'agent': 'codex',
+            'settings': settings, 'base_revision': 0})
+        self.assertTrue(self.store.run_lock.acquire(timeout=10))
+        self.store.run_lock.release()
+        stored = self.store.find(self.store.read(), session['id'], turn['id'])[1]
+        self.assertEqual(stored['settings'], settings)
+        before = self.store.read()
+        with self.assertRaises(ResearchError):
+            self.store.start(session['id'], {'question': 'Explain', 'agent': 'codex',
+                'settings': {'effort': 'invalid'}, 'base_revision': 0})
+        self.assertEqual(self.store.read(), before)
+        self.assertFalse(self.store.run_lock.locked())
+
     def test_saved_note_is_editable_content_without_conversation_boilerplate(self):
         session = self.session()
         turn = self.run_turn(session)

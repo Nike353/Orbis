@@ -130,3 +130,21 @@ it('gives larger fields room to grow and keeps paper centers separated', () => {
     }
   }
 });
+
+it('keeps focused cluster members and their paths visible after closing the inspector', () => {
+  const baseline = buildSceneData(graph);
+  const source = baseline.paperNodes.find((n) => n.paperDegree > 0)!;
+  const cluster = source.memberships.find((m) => m.role === 'primary')!.cluster.id;
+  const scene = buildSceneData(graph, { selection: null, focusedClusterId: cluster });
+  const members = scene.paperNodes.filter((n) =>
+    n.memberships.some((m) => m.cluster.id === cluster),
+  );
+  expect(members.length).toBeGreaterThan(1);
+  expect(members.every((n) => n.highlighted && !n.dimmed)).toBe(true);
+  const ids = new Set(members.map((n) => n.id));
+  const internal = scene.relationLinks.filter(
+    (e) => ids.has(String(e.source)) && ids.has(String(e.target)),
+  );
+  expect(internal.length).toBeGreaterThan(0);
+  expect(internal.every((e) => !e.dimmed)).toBe(true);
+});

@@ -58,7 +58,9 @@ and **Save changes**.
 For importing papers and asking AI questions, install and sign in to **one** of
 [Codex](https://developers.openai.com/codex/quickstart) or
 [Claude Code](https://code.claude.com/docs/en/quickstart), then restart Orbis.
-These features use that account's provider and usage limits. Browsing and manual
+Choose the **Model** and **Effort** for each agent workflow. Codex defaults to
+**GPT-5.6 Sol / medium**; you can select another model, enter a custom ID, or use
+your CLI defaults. These features use that account's provider and usage limits. Browsing and manual
 editing work without an agent.
 
 ## See the connections
@@ -126,7 +128,7 @@ library folder, including those directories.
 Application updates do not replace it. AI features send selected paper context
 to your configured provider; see [data handling](SECURITY.md) for details.
 
-For planned device sync, mobile access, and model controls, see the
+For planned device sync and mobile access, see the
 [design proposal](docs/SYNC_AND_MOBILE.md). These are future capabilities, not
 currently enabled remote access.
 

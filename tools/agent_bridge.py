@@ -128,6 +128,12 @@ def _command_parts(command):
         return []
 
 
+try:
+    from agent_settings import model_catalog, normalize_settings, settings_arguments
+except ModuleNotFoundError:
+    from tools.agent_settings import model_catalog, normalize_settings, settings_arguments
+
+
 def agent_catalog():
     result = []
     for agent in _agent_definitions():
@@ -136,6 +142,7 @@ def agent_catalog():
             "id": agent["id"],
             "label": agent["label"],
             "available": bool(parts and shutil.which(parts[0])),
+            "models": model_catalog(agent["id"]),
         })
     return result
 
@@ -147,6 +154,8 @@ def default_agent_id():
     preferred = os.environ.get("LITBENCH_DEFAULT_AGENT")
     if preferred in available:
         return preferred
+    if "codex" in available:
+        return "codex"
     return next(
         (agent["id"] for agent in _agent_definitions()
          if agent["id"] in available),
@@ -1043,9 +1052,10 @@ def write_outcome_schema(workspace):
 
 
 def build_agent_command(
-        agent_id, prompt, workspace, max_turns=80, read_only=False):
+        agent_id, prompt, workspace, max_turns=80, read_only=False, settings=None):
     agent = resolve_agent(agent_id)
     executable = agent["command"]
+    overrides = settings_arguments(agent_id, settings)
     schema_path = write_outcome_schema(workspace)
 
     if agent["protocol"] == "codex":
@@ -1054,6 +1064,7 @@ def build_agent_command(
         return [
             *executable,
             "exec",
+            *overrides,
             "--json",
             "--ephemeral",
             "--skip-git-repo-check",
@@ -1081,6 +1092,7 @@ def build_agent_command(
     )
     return [
         *executable,
+        *overrides,
         "--safe-mode",
         "--restricted",
         "--no-session-persistence",

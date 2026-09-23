@@ -34,6 +34,7 @@ try:
         load_batch,
         record_for,
         resolve_agent,
+        normalize_settings,
         stream_agent_events,
         utc_now,
         validate_full_text_source,
@@ -54,6 +55,7 @@ except ModuleNotFoundError:  # Imported as tools.serve by tests.
         load_batch,
         record_for,
         resolve_agent,
+        normalize_settings,
         stream_agent_events,
         utc_now,
         validate_full_text_source,
@@ -466,6 +468,12 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(503, {"error": str(exc)})
             return
 
+        try:
+            settings = normalize_settings(agent_id, body.get("settings"))
+        except ValueError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+
         batch_id = sanitize_line(body.get("batch_id", ""))
         arxiv_id = sanitize_line(body.get("arxiv_id", ""))
         is_batch_record = bool(batch_id or arxiv_id)
@@ -513,6 +521,7 @@ class Handler(SimpleHTTPRequestHandler):
                 relevance_policy,
                 agent_id,
                 agent["label"],
+                settings,
             )
         except BridgeContractError as exc:
             queue_finish(arxiv_id if is_batch_record else None,
@@ -549,7 +558,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def run_insert(
             self, record, hint, queue_arxiv_id, relevance_policy,
-            agent_id, agent_label):
+            agent_id, agent_label, settings=None):
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Cache-Control", "no-store")
@@ -575,6 +584,7 @@ class Handler(SimpleHTTPRequestHandler):
             "type": "start",
             "url": url,
             "arxiv_id": record.get("arxiv_id"),
+            "settings": settings,
         })
         duplicate_node = graph_duplicate(ROOT, record)
         if duplicate_node:
@@ -598,7 +608,7 @@ class Handler(SimpleHTTPRequestHandler):
         with IsolatedInsertion(ROOT) as insertion:
             prompt = build_prompt(record, hint, relevance_policy)
             command = build_agent_command(
-                agent_id, prompt, insertion.workspace, MAX_TURNS)
+                agent_id, prompt, insertion.workspace, MAX_TURNS, settings=settings)
             try:
                 proc = subprocess.Popen(
                     command,

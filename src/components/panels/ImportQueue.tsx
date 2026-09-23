@@ -1,3 +1,5 @@
+import { AgentModelSettings } from '../AgentModelSettings';
+import { useAgentSettings } from '../../store/agentSettings';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
@@ -79,6 +81,7 @@ export function ImportQueue() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentLog, setCurrentLog] = useState<string[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<LocalAgent['id'] | ''>('');
+  const { choice: settings } = useAgentSettings(selectedAgent);
   const abortRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
 
@@ -215,6 +218,8 @@ export function ImportQueue() {
           if (event.type === 'done') inserted = event.outcome === 'inserted';
           if (event.type === 'error') throw new Error(event.message);
         },
+        'paper',
+        settings,
       );
       return inserted;
     } catch (error) {
@@ -381,6 +386,11 @@ export function ImportQueue() {
             ))}
           </select>
         </label>
+        <AgentModelSettings
+          key={selectedAgent}
+          agent={selectedAgentInfo}
+          disabled={running}
+        />
       </div>
       {currentLog.length > 0 && (
         <div className="queue-log" aria-live="polite">

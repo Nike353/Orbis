@@ -116,3 +116,28 @@ membership and field boundaries grow to fit their contents. Select a field to
 focus it, or filter to that field to explore just its sources and relationships.
 The focus camera fits the field's current extent. Switch to 2D Lineages for a
 chronological view; web sources without dates appear under **Undated**.
+
+## Choose your agent, model, and effort
+
+**Add source**, the import queue, **Discuss**, and **Compare** all include Model
+and Effort controls. Codex starts with **GPT-5.6 Sol / medium**. If both CLIs are
+installed, Codex is the initial agent unless you saved another choice or set
+`LITBENCH_DEFAULT_AGENT`. Claude starts with its own CLI defaults.
+
+Codex suggestions come from its local model catalog, with a small fallback list
+when that cache is missing. Claude offers Sonnet, Opus, and Haiku aliases. Choose
+**Custom model ID…** to enter another model or deployment supported by your CLI.
+The CLI and account determine actual availability; Orbis does not silently switch
+to a different model when a request fails. Known models show their supported
+efforts; custom-model effort support is checked by the CLI.
+
+**CLI default** omits that override, so the CLI's configured value takes effect.
+Your selections are remembered per agent across workflows at this browser
+address. They do not change your global CLI configuration or a run already in
+progress. Research answers and Markdown exports include the requested settings;
+when CLI default is selected, the resolved model is managed by that CLI.
+
+Cluster galaxies use soft spiral dust, a faint central glow, and subtle arms.
+Their decoration dims when another field is focused, preserving the visibility
+of paper markers and evidence paths. Wider spacing and dynamic field sizing
+remain in place.

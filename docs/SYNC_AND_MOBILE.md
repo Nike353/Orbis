@@ -1,7 +1,8 @@
 # Device sync, mobile, and agent controls
 
-Design proposal, 23 September 2026. These capabilities are not implemented by the
-current local graph chooser. Orbis still serves only on loopback.
+Design proposal, 23 September 2026. Device sync and remote mobile access are not
+implemented. Model and effort controls are now available locally; see below.
+Orbis still serves only on loopback.
 
 ## Recommended direction: one library server, several clients
 
@@ -78,33 +79,28 @@ mobile browser; retain paste-a-link as the portable fallback. Cached read-only
 library views and offline drafts can come later. A native shell is justified if
 background transfer, deeper sharing, or notifications outgrow the web app.
 
-## Model and reasoning effort selection
+## Model and reasoning effort selection — implemented locally
 
-Add a small run-settings control used consistently by import, discuss, and compare:
+Import, discuss, and compare now offer **Agent → Model → Effort**. Codex defaults
+to GPT-5.6 Sol at medium effort. Claude uses CLI defaults until changed. Codex
+suggestions use its local model catalog; Claude offers CLI aliases. Both support
+a custom model ID and explicit CLI defaults.
 
-`Agent → Model → Reasoning effort`
-
-Offer **Use agent default** first. Load available model/effort capabilities from
-the installed agent and refresh them, rather than hardcoding a model list. Save a
-default per graph and permit a per-run override. Record the resolved settings
-with each run so a later comparison can be reproduced. Changing defaults should
-affect future runs only.
-
-Codex supports model configuration and `model_reasoning_effort`; supported effort
-levels depend on the selected model. Claude Code has its own model configuration.
-Use provider adapters to validate combinations and translate settings into CLI
-arguments, never an arbitrary shell command assembled from user text.
+Selections persist per agent in the browser's origin storage and are recorded
+with research turns. They do not alter global CLI configuration. Account access
+and custom-model effort support remain the CLI's responsibility. Provider
+adapters pass validated argument arrays without invoking a shell.
 [Codex configuration reference](https://developers.openai.com/codex/config-reference/),
 [Claude Code model configuration](https://code.claude.com/docs/en/model-config).
 
-If a requested model is unavailable, explain the error and let the user choose;
-do not silently substitute another model. Keep credentials and execution on the
-user's selected server. Model choice does not make a cloud-backed agent fully
+Future server-backed graph defaults would carry preferences between devices and
+across changing local graph ports. Credentials and execution should remain on the
+user's selected server. Selecting a model does not make a cloud-backed agent fully
 local: selected context still goes to that provider under the user's account.
 
 ## Suggested implementation order
 
-1. Model/effort controls: a bounded improvement to existing agent adapters.
+1. Model/effort controls: implemented; server-backed preference sync can follow.
 2. Authenticated single-server access, background launch, and automatic backups.
 3. Mobile reading, URL capture, notes, and job review as a PWA.
 4. Offline multi-writer replication only when a single always-on host is

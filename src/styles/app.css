@@ -3776,3 +3776,55 @@ a {
 .graph-picker-error {
   color: #b63838 !important;
 }
+
+.agent-model-settings {
+  min-width: 0;
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #d6dce5);
+  border-radius: 10px;
+}
+.agent-model-settings legend {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+.agent-model-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 0.65fr);
+  gap: 10px;
+}
+.agent-model-settings label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+}
+.agent-model-settings select,
+.agent-model-settings input {
+  width: 100%;
+  min-width: 0;
+}
+.agent-model-settings p {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted, #637186);
+}
+
+.agent-model-settings select,
+.agent-model-settings input,
+.add-paper-dialog .field > select {
+  min-height: 36px;
+  padding: 7px 9px;
+  font: inherit;
+  color: #263449;
+  background: #fff;
+  border: 1px solid #d6dce5;
+  border-radius: 7px;
+}
+.agent-model-settings select:focus,
+.agent-model-settings input:focus {
+  outline: 2px solid #7794d0;
+  outline-offset: 1px;
+}

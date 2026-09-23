@@ -387,34 +387,91 @@ function ellipseContour(field: SceneField, plane: 'xy' | 'xz' | 'yz', opacity: n
 }
 
 function fieldParticles(field: SceneField) {
+  // Soft, low-contrast spiral dust gives each field a galaxy identity. These
+  // background points are smaller and dimmer than the interactive paper stars.
+  const galaxy = new Group();
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext('2d')!;
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.2, 'rgba(255,255,255,0.5)');
+  gradient.addColorStop(0.55, 'rgba(255,255,255,0.12)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new CanvasTexture(canvas);
   const positions: number[] = [];
-  const count = 42 + Math.min(86, field.paperCount * 9);
+  const count = 140 + Math.min(280, field.paperCount * 8);
+  const phase = seeded(field.cluster.id, 0x9e3779b9) * Math.PI * 2;
   for (let index = 0; index < count; index += 1) {
-    const key = `${field.cluster.id}:${index}`;
-    const theta = seeded(key, 0x9e3779b9) * Math.PI * 2;
-    const vertical = seeded(key, 0x85ebca6b) * 2 - 1;
-    const ring = Math.sqrt(Math.max(0, 1 - vertical * vertical));
-    const radius = Math.cbrt(seeded(key, 0xc2b2ae35)) * 0.95;
+    const key = `${field.cluster.id}:dust:${index}`;
+    const radius = Math.sqrt(seeded(key, 0xc2b2ae35)) * 0.94;
+    const theta =
+      phase +
+      ((index % 3) * Math.PI * 2) / 3 +
+      radius * 5 +
+      (seeded(key, 0x9e3779b9) - 0.5) * 0.5;
     positions.push(
-      field.center.x + Math.cos(theta) * ring * radius * field.radii.x,
-      field.center.y + vertical * radius * field.radii.y,
-      field.center.z + Math.sin(theta) * ring * radius * field.radii.z,
+      field.center.x + Math.cos(theta) * radius * field.radii.x,
+      field.center.y + Math.sin(theta) * radius * field.radii.y,
+      field.center.z + (seeded(key, 0x85ebca6b) - 0.5) * field.radii.z * 0.5,
     );
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  return new Points(
-    geometry,
-    new PointsMaterial({
+  galaxy.add(
+    new Points(
+      geometry,
+      new PointsMaterial({
+        color: field.color,
+        map: texture,
+        size: field.selected ? 3.5 : 3.0,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: field.dimmed ? 0.025 : field.selected ? 0.48 : 0.32,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    ),
+  );
+  const haze = new Sprite(
+    new SpriteMaterial({
+      map: texture,
       color: field.color,
-      size: field.selected ? 1.8 : 1.15,
-      sizeAttenuation: true,
       transparent: true,
-      opacity: field.dimmed ? 0.025 : field.selected ? 0.27 : 0.115,
+      opacity: field.dimmed ? 0.012 : field.selected ? 0.2 : 0.13,
       blending: AdditiveBlending,
       depthWrite: false,
     }),
   );
+  haze.position.set(field.center.x, field.center.y, field.center.z);
+  haze.scale.set(field.radii.x * 2.1, field.radii.y * 2.1, 1);
+  galaxy.add(haze);
+  for (let arm = 0; arm < 3; arm += 1) {
+    const points = Array.from({ length: 72 }, (_, index) => {
+      const radius = 0.12 + (index / 71) * 0.76;
+      const theta = phase + (arm * Math.PI * 2) / 3 + radius * 5;
+      return new Vector3(
+        field.center.x + Math.cos(theta) * radius * field.radii.x,
+        field.center.y + Math.sin(theta) * radius * field.radii.y,
+        field.center.z,
+      );
+    });
+    galaxy.add(
+      new Line(
+        new BufferGeometry().setFromPoints(points),
+        new LineBasicMaterial({
+          color: field.color,
+          transparent: true,
+          opacity: field.dimmed ? 0.008 : field.selected ? 0.17 : 0.075,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ),
+    );
+  }
+  return galaxy;
 }
 
 function fieldShell(field: SceneField) {
@@ -423,7 +480,7 @@ function fieldShell(field: SceneField) {
     new MeshBasicMaterial({
       color: field.color,
       transparent: true,
-      opacity: field.dimmed ? 0.008 : field.selected ? 0.045 : 0.024,
+      opacity: field.dimmed ? 0.004 : field.selected ? 0.025 : 0.01,
       wireframe: false,
       blending: AdditiveBlending,
       depthWrite: false,

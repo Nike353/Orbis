@@ -735,7 +735,8 @@ export function buildSceneData(
     }
   }
 
-  const clusterSelection = selectedClusterId(graph, selection);
+  const clusterSelection =
+    selectedClusterId(graph, selection) ?? (selection === null ? focusedClusterId : null);
   let fields = graph.nodes
     .filter((node) => node.type === 'cluster')
     .map((cluster) =>
@@ -961,7 +962,14 @@ export function buildSceneData(
       original: edge,
       color: targetColor,
       highlighted,
-      dimmed: hasFocus && !highlighted,
+      dimmed:
+        hasFocus &&
+        !highlighted &&
+        !(
+          clusterSelection &&
+          highlightedIds.has(edge.source) &&
+          highlightedIds.has(edge.target)
+        ),
       crossCluster: Boolean(
         source.cluster && target.cluster && source.cluster !== target.cluster,
       ),

@@ -1,3 +1,5 @@
+import { AgentModelSettings } from './AgentModelSettings';
+import { useAgentSettings } from '../store/agentSettings';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bot, CheckCircle2, Circle, CircleStop, LoaderCircle, Plus, X } from 'lucide-react';
 import {
@@ -52,6 +54,7 @@ export function AddPaperDialog() {
   const [hint, setHint] = useState('');
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [agentId, setAgentId] = useState<LocalAgent['id'] | ''>('');
+  const { choice: settings } = useAgentSettings(agentId);
   const [running, setRunning] = useState(false);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +140,7 @@ export function AddPaperDialog() {
           if (next.type === 'error') throw new Error(next.message);
         },
         sourceKind,
+        settings,
       );
       if (outcome === 'inserted') {
         await reloadGraph();
@@ -213,6 +217,7 @@ export function AddPaperDialog() {
               </select>
             </span>
           </label>
+          <AgentModelSettings key={agentId} agent={agent} disabled={running} />
           <label className="field">
             <span>Source type</span>
             <select

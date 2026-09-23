@@ -16,11 +16,11 @@ from pathlib import Path
 
 try:
     from agent_bridge import (BridgeContractError, atomic_write_json,
-                              atomic_write_graph, resolve_agent, utc_now)
+                              atomic_write_graph, resolve_agent, utc_now, normalize_settings, settings_arguments)
     from build_data_js import validate
 except ModuleNotFoundError:
     from tools.agent_bridge import (BridgeContractError, atomic_write_json,
-                                    atomic_write_graph, resolve_agent, utc_now)
+                                    atomic_write_graph, resolve_agent, utc_now, normalize_settings, settings_arguments)
     from tools.build_data_js import validate
 
 
@@ -230,16 +230,17 @@ def validate_result(result, graph, session):
     return previews
 
 
-def research_command(agent_id, directory):
+def research_command(agent_id, directory, settings=None):
     agent = resolve_agent(agent_id)
+    overrides = settings_arguments(agent_id, settings)
     schema = directory / "output-schema.json"
     schema.write_text(json.dumps(RESEARCH_SCHEMA), encoding="utf-8")
     if agent_id == "codex":
-        return [*agent["command"], "exec", "--json", "--ephemeral", "--skip-git-repo-check",
+        return [*agent["command"], "exec", *overrides, "--json", "--ephemeral", "--skip-git-repo-check",
                 "--sandbox", "read-only", "-c", 'approval_policy="never"',
                 "--output-schema", str(schema), "--color", "never", "-"]
     # Q&A uses the supplied library context; no write, shell or external MCP tools.
-    return [*agent["command"], "-p", "--no-session-persistence", "--output-format",
+    return [*agent["command"], *overrides, "-p", "--no-session-persistence", "--output-format",
             "stream-json", "--verbose", "--json-schema", json.dumps(RESEARCH_SCHEMA),
             "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
             "--max-turns", "4"]
@@ -386,6 +387,10 @@ class ResearchStore:
         question = require_text(body.get("question"), "question", 8000)
         agent = body.get("agent")
         resolve_agent(agent)
+        try:
+            settings = normalize_settings(agent, body.get("settings"))
+        except ValueError as exc:
+            raise ResearchError(str(exc)) from exc
         if not self.run_lock.acquire(blocking=False):
             raise ResearchError("Another agent run is active. Wait or stop it first.", 409)
         try:
@@ -398,7 +403,7 @@ class ResearchStore:
                 if body.get("base_revision") != graph["meta"]["revision"]:
                     raise ResearchError("Graph changed. Reload before asking.", 409)
                 context = build_context(self.root, graph, session)
-                turn = {"id": str(uuid.uuid4()), "question": question, "agent": agent,
+                turn = {"id": str(uuid.uuid4()), "question": question, "agent": agent, "settings": settings,
                         "status": "running", "created_at": utc_now(),
                         "base_revision": graph["meta"]["revision"], "coverage": context["coverage"]}
                 session["turns"].append(turn)
@@ -423,7 +428,7 @@ class ResearchStore:
             prompt += "\n\nUSER QUESTION:\n" + turn["question"]
             with tempfile.TemporaryDirectory(prefix="litbench-research-") as directory:
                 directory = Path(directory)
-                command = research_command(turn["agent"], directory)
+                command = research_command(turn["agent"], directory, turn.get("settings"))
                 with (directory / "stdout").open("w+") as out, (directory / "stderr").open("w+") as err:
                     proc = subprocess.Popen(command, cwd=directory, stdin=subprocess.PIPE,
                                             stdout=out, stderr=err, text=True,

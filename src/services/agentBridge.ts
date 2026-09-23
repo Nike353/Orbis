@@ -1,7 +1,13 @@
+export interface AgentSettings {
+  model: string;
+  effort: string;
+}
+
 export interface LocalAgent {
   id: 'claude' | 'codex';
   label: string;
   available: boolean;
+  models?: { id: string; label: string; efforts: string[] }[];
 }
 
 export interface BridgeHealth {
@@ -53,6 +59,7 @@ export async function runAgentInsertion(
   signal: AbortSignal,
   onEvent: (event: AgentEvent) => void,
   sourceKind: 'paper' | 'blog' | 'website' = 'paper',
+  settings?: AgentSettings,
 ) {
   const response = await fetch('/api/insert', {
     method: 'POST',
@@ -62,6 +69,7 @@ export async function runAgentInsertion(
       url,
       hint,
       source_kind: sourceKind,
+      settings,
       ...(batchId && arxivId ? { batch_id: batchId, arxiv_id: arxivId } : {}),
     }),
     signal,
