@@ -62,7 +62,7 @@ The `paper` card:
   "year": 2023,
   "venue": "RSS 2023",
   "url": "https://arxiv.org/abs/2303.04137",
-  "summary": "1-3 sentence summary of the contribution.",
+  "summary": "Markdown explanation: motivation, background, framework, results, and limitations.",
   "key_findings": ["finding one", "finding two"],
   "arxiv": {
     "id": "2303.04137",
@@ -160,3 +160,11 @@ saved notes are not automatically rewritten.
 each entry's independent workspace is `graphs/<id>/`. The original workspace is
 exposed as the implicit `main` graph. The complete workspace folder is the backup
 unit. Additional personal graphs and their catalog are Git-ignored by default.
+
+New research-paper imports require `paper.summary` to contain these five exact
+Markdown H2 headings in order: `Motivation and problem`, `Background and prior
+work`, `Proposal and framework`, `Key results`, and `Limitations`. Each needs at
+least 80 characters of explanation. Additional analysis may follow. This
+insertion-only contract does not invalidate legacy saved graphs or impose
+research-paper sections on blogs and websites. The full note file should retain
+the same explanation, alongside graph relations and open questions.

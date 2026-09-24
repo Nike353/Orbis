@@ -249,17 +249,22 @@ export function AddPaperDialog() {
           </label>
           <label className="field">
             <span>
-              Comparison hint <small>optional</small>
+              Additional instructions <small>optional</small>
             </span>
             <textarea
               value={hint}
               onChange={(event) => setHint(event.target.value)}
-              placeholder="Compare closely with a paper, method, or cluster"
+              placeholder="e.g. Explain each training stage and compare the approach with Dreamer"
               disabled={running}
               rows={3}
-              maxLength={1200}
+              maxLength={2000}
             />
           </label>
+
+          <p className="research-caption">
+            Every paper includes motivation, background, the full framework, key results,
+            and limitations. Your instructions add to this summary.
+          </p>
 
           <div className={`agent-status ${ready ? 'ready' : ''}`}>
             {!health ? (

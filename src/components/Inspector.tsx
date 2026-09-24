@@ -137,7 +137,7 @@ function NodeInspector({ node }: { node: GraphNode }) {
               <ExternalLink size={12} />
             </a>
           </div>
-          <p>{node.paper.summary}</p>
+          <MarkdownView text={node.paper.summary} />
           {node.paper.key_findings.length > 0 && (
             <ul>
               {node.paper.key_findings.map((finding) => (

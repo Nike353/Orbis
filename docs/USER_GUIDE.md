@@ -141,3 +141,18 @@ Cluster galaxies use softly scattered stardust and a faint central glow.
 Their decoration dims when another field is focused, preserving the visibility
 of paper markers and evidence paths. Wider spacing and dynamic field sizing
 remain in place.
+
+## Default paper summaries
+
+Every newly imported research paper gets a full-text-grounded Markdown summary
+with five sections: **Motivation and problem**, **Background and prior work**,
+**Proposal and framework**, **Key results**, and **Limitations**. Multi-stage
+frameworks explain each stage in order, including inputs, outputs, and training
+versus deployment roles. Results identify evaluation conditions and source
+references; limitations distinguish the authors' claims from labeled inference.
+
+Use **Additional instructions** when importing to request extra explanations or
+comparisons. These supplement the five sections. Requests unsupported by the
+source should be identified as such. The import validator rejects missing or
+empty sections; it cannot mechanically guarantee factual correctness, so review
+the proposed content against the paper. Existing summaries are preserved.

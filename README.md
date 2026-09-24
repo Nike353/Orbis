@@ -53,7 +53,9 @@ again. Changed frontend source is rebuilt automatically.
 Your library starts empty. Click **Add source**, choose **Research paper**, **Blog post**, or **Web page**,
 paste its URL, and choose an agent. Orbis reads the paper and proposes a place for it in your graph,
 along with methods and relationships. Review the proposals, accept what belongs,
-and **Save changes**.
+and **Save changes**. Each new paper includes a structured explanation of its
+motivation, prior work, complete framework, key results, and limitations. Use
+**Additional instructions** to request deeper explanations or comparisons.
 
 For importing papers and asking AI questions, install and sign in to **one** of
 [Codex](https://developers.openai.com/codex/quickstart) or

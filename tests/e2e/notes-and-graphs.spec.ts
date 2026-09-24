@@ -39,7 +39,8 @@ test('creates an independent graph and saves rendered Markdown notes', async ({
         year: null,
         venue: 'Example',
         url: 'https://example.org/alpha',
-        summary: 'Synthetic browser test.',
+        summary:
+          '## Motivation and problem\n\nSynthetic source motivation.\n\n## Background and prior work\n\nEarlier approaches.\n\n## Proposal and framework\n\n### Stage 1\n\nFixture pipeline.\n\n## Key results\n\nFixture results.\n\n## Limitations\n\nFixture limitations.',
         key_findings: [],
       },
     },
@@ -52,6 +53,10 @@ test('creates an independent graph and saves rendered Markdown notes', async ({
   await page.reload();
   await page.getByRole('button', { name: '2D lineage view' }).click();
   await page.getByTestId('lineage-paper').click();
+  await expect(
+    page.getByRole('heading', { name: 'Motivation and problem', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stage 1', exact: true })).toBeVisible();
   const notes = '## A useful idea\n\n- **My observation**\n\n$$\nL = x^2\n$$';
   await page.getByRole('textbox', { name: 'Personal notes', exact: true }).fill(notes);
   await page.getByRole('button', { name: 'Preview', exact: true }).click();

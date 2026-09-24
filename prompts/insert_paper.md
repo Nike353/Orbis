@@ -37,7 +37,9 @@ checks, graph reads, or paper fetches after the needed evidence is available.
 ## Inputs
 
 - A paper URL (arXiv preferred) or title supplied by the user.
-- Optional user hints, e.g. "I think this belongs near the diffusion cluster".
+- Optional additional user instructions about explanation, comparison, or placement.
+  Fulfill these in addition to the default summary, within the read-only source
+  and graph transaction rules; do not discard the five default sections.
 
 ## Hard Rules — read before doing anything
 
@@ -101,7 +103,37 @@ Extract:
 
 - `title`, `authors` (first ~6, then the literal string `"..."`), `year`,
   `venue` (use "arXiv YYYY" if unpublished), `url`
-- `summary`: 1–3 sentences in your own words
+- `summary`: a substantive Markdown explanation using the five exact H2 headings
+  below, in this order. This is the main summary shown in the app, not a teaser
+  or a restatement of the abstract. Aim for roughly 600–1000 words for a typical
+  full research paper, adapting length to complexity rather than padding.
+  1. `## Motivation and problem`: explain the concrete problem, why it matters,
+     the setting and constraints, and what is missing from existing solutions.
+  2. `## Background and prior work`: explain the prerequisite ideas and how
+     prior approaches tackled this problem. Name the relevant methods/families
+     described by this paper and their specific gaps; define important acronyms.
+  3. `## Proposal and framework`: explain the central idea and the complete
+     framework. For a multi-stage method, use numbered stages or H3 subheadings
+     in order. State each stage's inputs, outputs, purpose, training/objectives,
+     and how it feeds the next stage. Distinguish data generation, training,
+     inference, and deployment; explain important equations in words if useful.
+  4. `## Key results`: identify evaluation tasks, metrics, comparison baselines,
+     quantitative findings, and informative ablations. Distinguish simulation
+     from hardware results. Preserve denominators, units, and conditions; do
+     not invent omitted numbers or confuse percentage points with percentages.
+  5. `## Limitations`: separate author-reported limitations from your explicitly
+     labeled inferences. Cover assumptions, failure modes, evaluation gaps,
+     scope, and practical cost where supported. State uncertainty when the
+     paper does not establish something; do not invent a limitation or claim
+     none exist simply because there is no dedicated limitations section.
+     Ground the explanation in the full text, with concise section, figure, or
+     table references near technical claims. Paraphrase; do not reproduce long
+     passages. Avoid generic filler and unsupported praise. Satisfy additional
+     user instructions within these sections, or append
+     `## Additional requested analysis` if the request needs its own discussion.
+     Explicitly identify requests that cannot be answered from available evidence.
+     For blog/website imports, adapt these topics to the article; do not invent
+     experiments or a research framework for a source that has neither.
 - `key_findings`: 2–4 bullets, each a concrete result or design insight
 - Candidate concepts the paper introduces or leans on: methods,
   representations, claims, assumptions, experiments/benchmarks,
@@ -199,8 +231,10 @@ Prefer relations from the SCHEMA.md vocabulary.
 
 Create `papers/<paper-id-without-prefix>.md` matching the structure of the
 existing files in `papers/` (see `papers/chi2023-diffusion-policy.md`):
-header bullet list (ID, authors, year/venue, URL, cluster), Summary,
-Key Findings, Relation to the Graph (cite your new edge IDs), Open Threads.
+header bullet list (ID, authors, year/venue, URL, cluster), then the same complete
+five-section explanation from `paper.summary`, followed by Relation to the Graph
+(cite your new edge IDs) and Open Threads. Do not replace this explanation with
+an abbreviated one-paragraph summary.
 Set `notes_file` on the paper node.
 
 ## Step 8 — Update the data files
@@ -220,6 +254,8 @@ Set `notes_file` on the paper node.
 
 ## Self-check before reporting
 
+- [ ] `paper.summary` contains all five required nonempty sections, explains
+      every framework stage, and addresses the additional user instructions.
 - [ ] `python3 tools/build_data_js.py` prints OK.
 - [ ] Only `data/graph.json`, `data/graph.js`, and one new `papers/*.md` file
       changed inside the isolated processing workspace.
