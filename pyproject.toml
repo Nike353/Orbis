@@ -1,5 +1,5 @@
 [project]
-name = "litbench"
+name = "orbis"
 version = "2.0.0"
 description = "A local workspace for connected research"
 requires-python = ">=3.12"

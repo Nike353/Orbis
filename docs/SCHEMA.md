@@ -1,4 +1,4 @@
-# LitBench Graph Schema
+# Orbis Graph Schema
 
 This document is the contract for `data/graph.json`. The browser UI and the
 local-agent prompt (`prompts/insert_paper.md`) both conform to it. If you
@@ -134,7 +134,7 @@ Prefer an existing relation over inventing a new one.
 ## The `data/graph.js` mirror
 
 `data/graph.js` is a GENERATED copy of `graph.json` wrapped in
-`window.LITBENCH_DATA = ...;` so the UI works when `index.html` is opened
+`window.ORBIS_DATA = ...;` so the UI works when `index.html` is opened
 directly from disk (`file://`), where `fetch()` is blocked. Never edit it by
 hand — regenerate with:
 

@@ -25,11 +25,16 @@ published automatically by this repository.
 4. Open the cloud button to connect Google Drive, or keep using Orbis locally.
 
 Application updates do not replace the library. **Open local library folder**
-shows the authoritative path. This preview retains the internal `litbench` name
-for compatibility with its credential store:
+shows the authoritative path:
 
-- macOS: `~/Library/Application Support/litbench/Library`
-- Linux: `${XDG_CONFIG_HOME:-~/.config}/litbench/Library`
+- macOS: `~/Library/Application Support/Orbis/Profile/Library`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/Orbis/Profile/Library`
+
+Upgrading from an earlier preview copies the existing library and sync history
+automatically, then re-encrypts the saved Google connection and recovery key under
+the Orbis app identity. Close the previous app before upgrading. The previous
+profile remains a backup; an interrupted upgrade does not replace it. Subsequent
+launches use the Orbis profile without copying the old data again.
 
 The terminal launcher has separate workspace defaults; importing does not make
 it share the desktop app's library. Back up the whole library folder with Orbis

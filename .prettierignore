@@ -12,6 +12,7 @@ playwright-report
 tests/fixtures/library/data/graph.js
 
 .venv/
+.orbis/
 .litbench/
 uv.lock
 build/

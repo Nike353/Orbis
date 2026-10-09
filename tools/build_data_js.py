@@ -262,7 +262,7 @@ def render_mirror(data):
         "// GENERATED FILE - DO NOT EDIT.\n"
         "// Mirror of data/graph.json for file:// mode. Regenerate with:\n"
         "//   python3 tools/build_data_js.py\n"
-        "window.LITBENCH_DATA = "
+        "window.ORBIS_DATA = "
         + json.dumps(data, indent=2, ensure_ascii=False)
         + ";\n"
     )

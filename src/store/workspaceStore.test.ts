@@ -54,7 +54,7 @@ describe('workspace store', () => {
       label: 'Researcher-edited label',
       origin: 'user',
     });
-    expect(localStorage.getItem('litbench:v2:draft')).not.toBeNull();
+    expect(localStorage.getItem('orbis:v2:draft')).not.toBeNull();
   });
 
   it('persists layout positions without transferring content ownership', () => {
@@ -148,7 +148,7 @@ describe('workspace store', () => {
     expect(state.baseRevision).toBe(nextRevision);
     expect(state.graph?.meta.revision).toBe(nextRevision);
     expect(state.dirty).toBe(false);
-    expect(localStorage.getItem('litbench:v2:draft')).toBeNull();
+    expect(localStorage.getItem('orbis:v2:draft')).toBeNull();
   });
   it('keeps edits made during an autosave and saves them against the acknowledged revision', async () => {
     const id = graph.nodes[0].id;
@@ -177,7 +177,7 @@ describe('workspace store', () => {
     expect(useWorkspaceStore.getState().graph?.nodes.find((n) => n.id === id)?.label).toBe(
       'Newer edit',
     );
-    expect(localStorage.getItem('litbench:v2:draft')).not.toBeNull();
+    expect(localStorage.getItem('orbis:v2:draft')).not.toBeNull();
     await useWorkspaceStore.getState().save();
     expect(useWorkspaceStore.getState().dirty).toBe(false);
     expect(useWorkspaceStore.getState().graph?.nodes.find((n) => n.id === id)?.label).toBe(

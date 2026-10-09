@@ -57,7 +57,7 @@ comparison. Start a new comparison to change its papers or columns.
 
 ## Sessions, limits, and backups
 
-Conversations belong to LitBench and live in `data/research.json` inside the
+Conversations belong to Orbis and live in `data/research.json` inside the
 selected workspace. Each CLI invocation is ephemeral; it does not accumulate
 an unbounded provider conversation. Refreshing or leaving the view does not
 cancel a server-side run. Reopen it from the saved conversation list. Stopping
@@ -80,9 +80,9 @@ For a complete backup, stop the server and copy the entire workspace, including
 
 - Run `sh start.sh --doctor` to inspect prerequisites.
 - If an agent is missing, install and sign in to its CLI, then restart the server.
-  Set `LITBENCH_CODEX` or `LITBENCH_CLAUDE` for a custom executable path.
+  Set `ORBIS_CODEX` or `ORBIS_CLAUDE` for a custom executable path.
 - A provider usage limit or authentication failure comes from that CLI's account.
-  Retry after resolving it; LitBench does not purchase credits or reset limits.
+  Retry after resolving it; Orbis does not purchase credits or reset limits.
 - Save local drafts before asking an agent or accepting a proposal. Reload after
   another client changes the graph.
 - Only one server can open a workspace at once. Use different workspace paths
@@ -122,7 +122,7 @@ chronological view; web sources without dates appear under **Undated**.
 **Add source**, the import queue, **Discuss**, and **Compare** all include Model
 and Effort controls. Codex starts with **GPT-5.6 Sol / medium**. If both CLIs are
 installed, Codex is the initial agent unless you saved another choice or set
-`LITBENCH_DEFAULT_AGENT`. Claude starts with its own CLI defaults.
+`ORBIS_DEFAULT_AGENT`. Claude starts with its own CLI defaults.
 
 Codex suggestions come from its local model catalog, with a small fallback list
 when that cache is missing. Claude offers Sonnet, Opus, and Haiku aliases. Choose

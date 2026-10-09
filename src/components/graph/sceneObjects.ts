@@ -558,7 +558,7 @@ function timeAxis(scene: SceneData) {
 
 export function createSceneBackdrop(scene: SceneData) {
   const group = new Group();
-  group.name = 'litbench-literature-universe';
+  group.name = 'orbis-literature-universe';
   group.add(starfield(scene));
   scene.fields.forEach((field) => {
     group.add(fieldParticles(field));

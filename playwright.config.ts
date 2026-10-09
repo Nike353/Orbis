@@ -3,11 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const e2eRoot =
-  process.env.LITBENCH_E2E_ROOT ??
-  join(tmpdir(), `litbench-e2e-${process.pid}-${Date.now()}`);
+  process.env.ORBIS_E2E_ROOT ?? join(tmpdir(), `orbis-e2e-${process.pid}-${Date.now()}`);
 const repositoryRoot = process.cwd();
 const e2eStatePath = `${e2eRoot}/data/imports/e2e-state.json`;
-process.env.LITBENCH_E2E_ROOT = e2eRoot;
+process.env.ORBIS_E2E_ROOT = e2eRoot;
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -57,10 +56,10 @@ export default defineConfig({
       `node scripts/prepare-e2e.mjs "${e2eRoot}" && ` +
       `cd "${e2eRoot}" && ` +
       `PATH="${repositoryRoot}/tests/fixtures/bin:$PATH" ` +
-      `LITBENCH_CLAUDE='bash "${repositoryRoot}/tests/fixtures/bin/claude"' ` +
-      `LITBENCH_CODEX="${e2eRoot}/not-installed-codex" ` +
-      `LITBENCH_DEFAULT_AGENT=claude ` +
-      `LITBENCH_STATE_PATH="${e2eStatePath}" ` +
+      `ORBIS_CLAUDE='bash "${repositoryRoot}/tests/fixtures/bin/claude"' ` +
+      `ORBIS_CODEX="${e2eRoot}/not-installed-codex" ` +
+      `ORBIS_DEFAULT_AGENT=claude ` +
+      `ORBIS_STATE_PATH="${e2eStatePath}" ` +
       `python3 tools/serve.py --port 4173`,
     url: 'http://127.0.0.1:4173/api/health',
     reuseExistingServer: false,

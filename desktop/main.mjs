@@ -16,13 +16,32 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { atomic, SyncEngine } from './sync-engine.mjs';
 import { Drive, authorize, validateClient } from './google-drive.mjs';
+import {
+  LEGACY_APP_NAME,
+  TRANSFER_FLAG,
+  acquireLegacyProfile,
+  migrateProfile,
+  serveLegacyProfile,
+} from './profile-migration.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-if (process.env.ORBIS_USER_DATA)
-  app.setPath('userData', path.resolve(process.env.ORBIS_USER_DATA));
-const home = app.getPath('userData'),
-  library = path.join(home, 'Library');
-const secretPath = path.join(home, 'desktop-secrets.bin');
+const transferring =
+  process.argv.includes(TRANSFER_FLAG) && typeof process.send === 'function';
+app.setName(transferring ? LEGACY_APP_NAME : 'Orbis');
+const legacyHome = transferring
+  ? process.argv[process.argv.indexOf(TRANSFER_FLAG) + 1]
+  : process.env.ORBIS_USER_DATA
+    ? path.resolve(process.env.ORBIS_USER_DATA)
+    : path.join(app.getPath('appData'), LEGACY_APP_NAME);
+const home = transferring
+  ? legacyHome
+  : process.env.ORBIS_USER_DATA
+    ? path.resolve(process.env.ORBIS_USER_DATA)
+    : path.join(app.getPath('appData'), 'Orbis');
+app.setPath('userData', home);
+const profile = path.join(home, 'Profile');
+const library = path.join(profile, 'Library');
+const secretPath = path.join(profile, 'desktop-secrets.bin');
 let state = { device: randomUUID() },
   engine,
   window,
@@ -70,7 +89,7 @@ function makeEngine() {
       state.credentials && state.client ? new Drive(state.client, state.credentials) : null,
     state,
     save,
-    directory: path.join(home, 'Sync'),
+    directory: path.join(profile, 'Sync'),
     backend: {
       get: () => request('/api/desktop/snapshot'),
       apply: (snapshot, expected) => request('/api/desktop/apply', { snapshot, expected }),
@@ -107,14 +126,17 @@ async function startBackend() {
       process.env.PATH || '',
     ].join(path.delimiter),
   };
+  // Existing custom CLI locations keep working during the rename.
+  env.ORBIS_CODEX ||= env.LITBENCH_CODEX;
+  env.ORBIS_CLAUDE ||= env.LITBENCH_CLAUDE;
   for (const candidate of [
     '/Applications/Codex.app/Contents/Resources/codex',
     '/Applications/ChatGPT.app/Contents/Resources/codex',
   ]) {
-    if (!env.LITBENCH_CODEX)
+    if (!env.ORBIS_CODEX)
       try {
         await access(candidate);
-        env.LITBENCH_CODEX = JSON.stringify(candidate);
+        env.ORBIS_CODEX = JSON.stringify(candidate);
       } catch {
         /* optional */
       }
@@ -189,6 +211,22 @@ async function main() {
   app.on('second-instance', () => {
     window?.show();
     window?.focus();
+  });
+  await migrateProfile({
+    home,
+    legacyHome,
+    acquire: () =>
+      acquireLegacyProfile({
+        executable: process.execPath,
+        appPath: app.getAppPath(),
+        packaged: app.isPackaged,
+        legacyHome,
+        parentOwnsLock: home === legacyHome,
+      }),
+    encrypt: (secrets) => {
+      storageReady();
+      return safeStorage.encryptString(secrets);
+    },
   });
   try {
     storageReady();
@@ -451,7 +489,8 @@ app.on('before-quit', () => {
   backend?.kill('SIGINT');
 });
 app.on('window-all-closed', () => app.quit());
-main().catch((error) => {
+const launch = transferring ? serveLegacyProfile({ app, safeStorage, legacyHome }) : main();
+launch.catch((error) => {
   dialog.showErrorBox('Orbis could not start', error.message);
   app.quit();
 });

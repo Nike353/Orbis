@@ -38,7 +38,7 @@ DEFAULT_STATE_OUTPUT = (
 DEFAULT_SNAPSHOT_DIR = ROOT / "data" / "imports" / "sources"
 ENDPOINT = "https://export.arxiv.org/api/query"
 USER_AGENT = (
-    "LitBench/2.0 metadata-retriever "
+    "Orbis/2.0 metadata-retriever "
     "(local research workspace; contact: local-user)")
 ATOM = {"atom": "http://www.w3.org/2005/Atom",
         "arxiv": "http://arxiv.org/schemas/atom",

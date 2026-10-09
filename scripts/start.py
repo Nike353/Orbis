@@ -6,16 +6,38 @@ import os
 import subprocess
 import sys
 import tempfile
+import shutil
+import fcntl
 from pathlib import Path
 
 APP = Path(__file__).resolve().parent.parent
 NODE_VERSION = "22.23.2"
+sys.path.insert(0, str(APP))
+from tools.branding import env_setting
 
 
 def default_workspace():
     base = (Path.home() / "Library/Application Support" if sys.platform == "darwin"
             else Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")))
-    return base / "LitBench/default"
+    return base / "Orbis/default"
+
+
+def migrate_default_workspace():
+    target = default_workspace()
+    previous = target.parent.parent / "LitBench/default"
+    if target.exists() or not previous.exists():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with (previous / ".server.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise SystemExit("Close the previous Orbis server before upgrading your library.")
+        with tempfile.TemporaryDirectory(prefix=".library-upgrade-", dir=target.parent) as staging:
+            copied = Path(staging) / "default"
+            shutil.copytree(previous, copied)
+            copied.rename(target)
+    return target
 
 
 def source_digest():
@@ -30,7 +52,10 @@ def source_digest():
 
 
 def prepare_frontend(force=False):
-    cache = APP / ".litbench"
+    cache = APP / ".orbis"
+    previous = APP / ".litbench"
+    if not cache.exists() and previous.is_dir():
+        previous.rename(cache)
     cache.mkdir(exist_ok=True)
     # Serialize setup so simultaneous starts cannot damage shared dependencies.
     import fcntl
@@ -63,18 +88,19 @@ def prepare_frontend(force=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--workspace", type=Path, default=default_workspace())
+    parser.add_argument("--workspace", type=Path)
     parser.add_argument("--port", type=int, help="Use a specific port (otherwise choose an available port starting at 8000)")
     parser.add_argument("--build", action="store_true", help="Force a frontend rebuild")
     parser.add_argument("--doctor", action="store_true", help="Show setup information without starting")
     parser.add_argument("--prepare-only", action="store_true", help="Set up dependencies and frontend without starting")
     args = parser.parse_args()
+    if args.workspace is None:
+        args.workspace = default_workspace() if args.doctor or args.prepare_only else migrate_default_workspace()
     print(f"Orbis · Python {sys.version.split()[0]}", flush=True)
     print(f"Library: {args.workspace.expanduser().resolve()}", flush=True)
     if args.doctor:
-        import shutil
         for name in ("codex", "claude"):
-            print(f"{name}: {os.environ.get(f'LITBENCH_{name.upper()}') or shutil.which(name) or 'not installed (optional)'}")
+            print(f"{name}: {env_setting(name.upper()) or shutil.which(name) or 'not installed (optional)'}")
         print("Run ./start.sh to set up and launch. AI features need one signed-in agent CLI.")
         return
     try:

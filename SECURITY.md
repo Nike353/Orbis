@@ -1,6 +1,6 @@
 # Local execution and data handling
 
-LitBench is a single-user localhost application. Do not expose its server to
+Orbis is a single-user localhost application. Do not expose its server to
 the public internet or put an unauthenticated proxy in front of it. Workspaces
 contain your graph, notes, conversations, and import state.
 
@@ -13,7 +13,7 @@ encrypted by Orbis. The native local API additionally requires a per-launch
 secret header. See [desktop security and limitations](docs/DESKTOP.md).
 
 AI operations send selected library context to the chosen CLI's configured
-provider. They use the CLI's authentication and account limits; LitBench does
+provider. They use the CLI's authentication and account limits; Orbis does
 not need or distribute an API key. Paper insertion can retrieve external source
 content. Research answers use stored library context and disable external tools
 where the CLI supports it.

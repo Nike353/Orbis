@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-const fixtureRoot = process.env.LITBENCH_E2E_ROOT;
+const fixtureRoot = process.env.ORBIS_E2E_ROOT;
 const canonicalGraph = JSON.parse(
   readFileSync(fixtureRoot ? `${fixtureRoot}/data/graph.json` : 'data/graph.json', 'utf8'),
 );

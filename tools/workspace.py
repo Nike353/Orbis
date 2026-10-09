@@ -28,5 +28,5 @@ def lock_workspace(root):
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         handle.close()
-        raise SystemExit("This workspace is already open in another LitBench server.")
+        raise SystemExit("This workspace is already open in another Orbis server.")
     return handle

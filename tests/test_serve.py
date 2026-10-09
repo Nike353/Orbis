@@ -241,7 +241,7 @@ class ServerHelpersTests(unittest.TestCase):
                 graph,
             )
             self.assertIn(
-                "window.LITBENCH_DATA",
+                "window.ORBIS_DATA",
                 (root / "data" / "graph.js").read_text(encoding="utf-8"),
             )
 

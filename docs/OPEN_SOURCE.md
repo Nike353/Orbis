@@ -1,4 +1,13 @@
-# Distributing LitBench
+# Distributing Orbis
+
+The public repository distributes the Orbis desktop application with an empty
+library and optional encrypted Google Drive sync. ScholarSync is the maintainer's
+separate private library repository; it is not a distribution source.
+
+Publish macOS and Linux installers as GitHub Release downloads after platform
+verification. Each user runs the local application and can connect their own
+Google Drive and agent account; no shared Orbis library server is required.
+See [desktop builds and Google setup](DESKTOP.md) for the current preview status.
 
 Publish application code, prompts, schema/architecture documentation, launcher,
 release tooling, dependency lockfile, tests with synthetic fixtures, CI, and the
@@ -12,11 +21,12 @@ already tracked files or historical commits.
 Create a clean source archive:
 
 ```sh
-python3 scripts/package_release.py --output release/litbench-source.zip
+python3 scripts/package_release.py --output release/orbis-source.zip
 ```
 
-Unpack that archive into a new directory and initialize a fresh Git repository
-there for public release. The packager uses an application file allowlist and
+Use the existing public application repository for release work. If an archive
+comes from a private checkout, audit its documentation and screenshots before
+publishing it and never copy the private Git history. The packager uses an application file allowlist and
 creates an empty default graph. It excludes personal data, source PDFs, sessions,
 temporary runs, credentials, dependencies, and Git history. Test fixtures contain
 synthetic notes and feed records; familiar public paper metadata is used only to
@@ -26,13 +36,14 @@ For users who should not need Node.js:
 
 ```sh
 npm run build
-python3 scripts/package_release.py --runtime --output release/litbench-runtime.zip
+python3 scripts/package_release.py --runtime --output release/orbis-runtime.zip
 ```
 
 The runtime includes compiled frontend assets, Python tools, documentation, and
-prompts. Users unzip it, install Python 3.10+ and a supported agent CLI, sign in,
-and run `sh start.sh`. A browser opens the localhost application.
-The launcher prints its URL; it does not install agents or open the browser.
+prompts. Users unzip it and run `sh start.sh`; the launcher prepares Python and
+prints the localhost URL to open in their browser. AI features require a separately
+installed and signed-in agent CLI. This archive is an alternative to the desktop
+installer, which launches in its own window.
 To upgrade, unpack new application files and point the launcher at the existing
 personal workspace. Stop the previous server and back up that workspace first.
 

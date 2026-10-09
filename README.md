@@ -4,7 +4,8 @@
 
 Orbis turns a paper library into an interactive workspace. See how papers
 relate, keep the ideas you want to remember, and ask questions grounded in your
-notes—all from a browser on your own computer.
+notes—from a desktop app or browser on your own computer, with optional encrypted
+Google Drive sync.
 
 ![Papers grouped into connected research fields in Orbis's 3D universe](docs/images/universe.png)
 
@@ -44,8 +45,8 @@ app, and press `Ctrl+C` when you're done.
 <summary>Prefer Git?</summary>
 
 ```sh
-git clone https://github.com/Nike353/LitBench.git
-cd LitBench
+git clone https://github.com/Nike353/LitBench.git Orbis
+cd Orbis
 sh start.sh
 ```
 
@@ -116,13 +117,15 @@ starts empty, and no personal research library is included in this repository._
 
 ## Where your work lives
 
-Orbis was previously called LitBench; the repository URL and existing library
-folder names retain that name for compatibility. The application and your library
-are stored separately. By default, your papers,
-notes, graph, and conversations live in:
+The public Orbis application and each user's private library are stored separately.
+The downloadable desktop app keeps its library under the locations listed in the
+[desktop guide](docs/DESKTOP.md). The terminal launcher defaults to:
 
-- **macOS:** `~/Library/Application Support/LitBench/default`
-- **Linux:** `~/.local/share/LitBench/default` (or under `XDG_DATA_HOME`)
+- **macOS:** `~/Library/Application Support/Orbis/default`
+- **Linux:** `~/.local/share/Orbis/default` (or under `XDG_DATA_HOME`)
+
+Existing default libraries are copied automatically when upgrading; the previous
+folder remains a backup. Explicitly selected workspace folders keep their names.
 
 To use a different library:
 

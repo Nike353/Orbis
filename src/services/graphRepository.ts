@@ -1,7 +1,8 @@
 import { migrateAndValidateGraph, type GraphData } from '../domain/schema';
 import { serializeForSave } from '../domain/graph';
+import { readPreference, removePreference } from './preferences';
 
-const DRAFT_KEY = 'litbench:v2:draft';
+const DRAFT_KEY = 'orbis:v2:draft';
 let draftKey = DRAFT_KEY;
 const API_TIMEOUT_MS = 1_800;
 
@@ -43,13 +44,13 @@ async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
 
 function readDraft(): StoredDraft | null {
   try {
-    const raw = localStorage.getItem(draftKey);
+    const raw = readPreference(draftKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as StoredDraft;
     const { graph } = migrateAndValidateGraph(parsed.graph);
     return { baseRevision: parsed.baseRevision, graph };
   } catch {
-    localStorage.removeItem(draftKey);
+    removePreference(draftKey);
     return null;
   }
 }
@@ -58,7 +59,9 @@ async function loadRawGraph(): Promise<{ raw: unknown; mode: LoadMode }> {
   try {
     const response = await fetchWithTimeout('/api/graph', { cache: 'no-store' });
     if (response.ok) {
-      const workspace = response.headers.get('X-LitBench-Workspace');
+      const workspace =
+        response.headers.get('X-Orbis-Workspace') ??
+        response.headers.get('X-LitBench-Workspace');
       draftKey = workspace ? `${DRAFT_KEY}:${workspace}` : DRAFT_KEY;
       return { raw: await response.json(), mode: 'api' };
     }
@@ -73,8 +76,9 @@ async function loadRawGraph(): Promise<{ raw: unknown; mode: LoadMode }> {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return { raw: await response.json(), mode: 'http' };
   } catch {
-    if (window.LITBENCH_DATA) {
-      return { raw: window.LITBENCH_DATA, mode: 'snapshot' };
+    const snapshot = window.ORBIS_DATA ?? window.LITBENCH_DATA;
+    if (snapshot) {
+      return { raw: snapshot, mode: 'snapshot' };
     }
     throw new Error(
       'Could not load the research graph. Start the local server or regenerate data/graph.js.',
@@ -110,7 +114,7 @@ export function persistDraft(graph: GraphData, baseRevision: number) {
 
 export function clearDraft() {
   try {
-    localStorage.removeItem(draftKey);
+    removePreference(draftKey);
   } catch {
     // No-op when storage is unavailable.
   }

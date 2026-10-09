@@ -1,3 +1,4 @@
+import { readPreference } from '../../services/preferences';
 import { AgentModelSettings } from '../AgentModelSettings';
 import { useAgentSettings } from '../../store/agentSettings';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -155,7 +156,7 @@ export function ImportQueue() {
       if (health.agents.some((agent) => agent.id === current && agent.available)) {
         return current;
       }
-      const stored = window.localStorage.getItem('litbench.agent');
+      const stored = readPreference('orbis.agent');
       const storedAgent = health.agents.find(
         (agent) => agent.available && agent.id === stored,
       );
@@ -173,7 +174,7 @@ export function ImportQueue() {
 
   useEffect(() => {
     if (selectedAgent) {
-      window.localStorage.setItem('litbench.agent', selectedAgent);
+      window.localStorage.setItem('orbis.agent', selectedAgent);
     }
   }, [selectedAgent]);
 

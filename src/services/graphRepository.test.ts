@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadGraph, RevisionConflictError, saveGraph } from './graphRepository';
+import {
+  loadGraph,
+  RevisionConflictError,
+  saveGraph,
+  clearDraft,
+  restoreDraft,
+} from './graphRepository';
 import { migrateAndValidateGraph } from '../domain/schema';
 import canonicalGraph from '../../tests/fixtures/library/data/graph.json';
 
@@ -56,5 +62,36 @@ describe('graph repository', () => {
         currentRevision: 4,
       }),
     );
+  });
+
+  it('recovers a previous workspace draft and does not resurrect it after saving', async () => {
+    const key = 'litbench:v2:draft:workspace-a';
+    localStorage.setItem(key, JSON.stringify({ baseRevision: graph.meta.revision, graph }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(rawGraph), {
+          headers: { 'X-Orbis-Workspace': 'workspace-a' },
+        }),
+      ),
+    );
+    const loaded = await loadGraph();
+    expect(loaded.draftAvailable).toBe(true);
+    expect(restoreDraft(graph.meta.revision)).toEqual(graph);
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(localStorage.getItem('orbis:v2:draft:workspace-a')).not.toBeNull();
+    clearDraft();
+    expect(restoreDraft(graph.meta.revision)).toBeNull();
+  });
+
+  it('reads previous offline exports while preferring Orbis snapshots', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')));
+    vi.stubGlobal('LITBENCH_DATA', rawGraph);
+    expect((await loadGraph()).mode).toBe('snapshot');
+    vi.stubGlobal('ORBIS_DATA', {
+      ...rawGraph,
+      meta: { ...rawGraph.meta, title: 'New export' },
+    });
+    expect((await loadGraph()).graph.meta.title).toBe('New export');
   });
 });

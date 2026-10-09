@@ -1,4 +1,4 @@
-# LitBench Architecture
+# Orbis Architecture
 
 ## Boundaries
 

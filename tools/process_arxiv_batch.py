@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resume the LitBench paper queue through a selected local agent."""
+"""Resume the Orbis paper queue through a selected local agent."""
 
 import argparse
 import json

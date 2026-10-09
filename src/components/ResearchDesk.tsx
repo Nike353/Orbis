@@ -1,3 +1,4 @@
+import { readPreference } from '../services/preferences';
 import { AgentModelSettings } from './AgentModelSettings';
 import { useAgentSettings } from '../store/agentSettings';
 import { MarkdownNotes, MarkdownView } from './MarkdownNotes';
@@ -86,7 +87,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     void refreshList().catch((e) => setError(String(e.message)));
     void getBridgeHealth().then((value) => {
       setHealth(value);
-      const stored = window.localStorage.getItem('litbench.agent');
+      const stored = readPreference('orbis.agent');
       setAgent(
         value?.agents.find((a) => a.id === stored && a.available)?.id ??
           value?.default_agent ??
@@ -236,7 +237,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
   function exportSession(format: 'json' | 'md') {
     if (!current) return;
     downloadText(
-      `litbench-${current.id}.${format}`,
+      `orbis-${current.id}.${format}`,
       format === 'json'
         ? JSON.stringify(current, null, 2)
         : sessionMarkdown(current, labels),
@@ -747,7 +748,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                 disabled={pending || running}
                 onChange={(e) => {
                   setAgent(e.target.value);
-                  window.localStorage.setItem('litbench.agent', e.target.value);
+                  window.localStorage.setItem('orbis.agent', e.target.value);
                 }}
               >
                 {!agent && <option value="">Choose an agent</option>}

@@ -1,3 +1,4 @@
+import { readPreference } from '../services/preferences';
 import { AgentModelSettings } from './AgentModelSettings';
 import { useAgentSettings } from '../store/agentSettings';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -33,7 +34,7 @@ function chooseAgent(
   if (health.agents.some((agent) => agent.id === current && agent.available)) {
     return current;
   }
-  const stored = window.localStorage.getItem('litbench.agent');
+  const stored = readPreference('orbis.agent');
   return (
     health.agents.find((agent) => agent.available && agent.id === stored)?.id ??
     health.agents.find((agent) => agent.available && agent.id === health.default_agent)
@@ -79,7 +80,7 @@ export function AddPaperDialog() {
   }, [open, running, setOpen]);
 
   useEffect(() => {
-    if (agentId) window.localStorage.setItem('litbench.agent', agentId);
+    if (agentId) window.localStorage.setItem('orbis.agent', agentId);
   }, [agentId]);
 
   function close() {

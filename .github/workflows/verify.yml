@@ -19,8 +19,8 @@ jobs:
       - run: npm run verify
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - run: python3 scripts/package_release.py --runtime --output release/litbench-runtime.zip
+      - run: python3 scripts/package_release.py --runtime --output release/orbis-runtime.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: litbench-${{ matrix.os }}
+          name: orbis-${{ matrix.os }}
           path: release/*.zip

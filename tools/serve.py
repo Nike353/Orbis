@@ -15,8 +15,10 @@ from urllib.parse import urlparse, parse_qs, unquote
 
 try:
     from research import ResearchStore, ResearchError, paper_note
+    from branding import env_setting
 except ModuleNotFoundError:
     from tools.research import ResearchStore, ResearchError, paper_note
+    from tools.branding import env_setting
 
 try:
     from build_data_js import validate
@@ -63,7 +65,7 @@ except ModuleNotFoundError:  # Imported as tools.serve by tests.
 
 
 APP_ROOT = Path(__file__).resolve().parent.parent
-ROOT = Path(os.environ.get("LITBENCH_WORKSPACE", APP_ROOT)).expanduser().resolve()
+ROOT = Path(env_setting("WORKSPACE", APP_ROOT)).expanduser().resolve()
 DIST = APP_ROOT / "dist"
 GRAPH_JSON = ROOT / "data" / "graph.json"
 INSERT_TIMEOUT_S = 30 * 60
@@ -330,7 +332,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             self.send_json(200, data, {
                 "ETag": f'"revision-{data["meta"]["revision"]}"',
-                "X-LitBench-Workspace": hashlib.sha256(str(ROOT).encode()).hexdigest()[:20],
+                "X-Orbis-Workspace": hashlib.sha256(str(ROOT).encode()).hexdigest()[:20],
             })
             return
         # Data belongs to the selected workspace, never the built-in static bundle.
@@ -804,8 +806,8 @@ def configure_workspace(root, use_environment=True):
     workspace_lock = lock_workspace(ROOT)
     GRAPH_JSON = ROOT / "data" / "graph.json"
     queue_store = QueueStateStore(
-        (os.environ.get("LITBENCH_BATCH_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106.json",
-        (os.environ.get("LITBENCH_STATE_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106-state.json")
+        (env_setting("BATCH_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106.json",
+        (env_setting("STATE_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106-state.json")
     research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
     research_store.recover()
     return workspace_lock

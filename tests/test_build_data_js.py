@@ -26,7 +26,7 @@ class GraphValidatorTests(unittest.TestCase):
     def test_rendered_mirror_is_deterministic(self):
         self.assertEqual(render_mirror(self.graph), render_mirror(self.graph))
         self.assertIn(
-            "window.LITBENCH_DATA = ", render_mirror(self.graph))
+            "window.ORBIS_DATA = ", render_mirror(self.graph))
 
     def test_malformed_nested_values_are_reported_without_crashing(self):
         graph = copy.deepcopy(self.graph)

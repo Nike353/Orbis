@@ -54,7 +54,7 @@ class ResearchTests(unittest.TestCase):
         atomic_write_graph(self.root, self.graph)
         self.store = ResearchStore(self.root, threading.Lock(), threading.Lock(), APP)
         command = f'"{sys.executable}" "{APP / "tests/fixtures/research_agent.py"}"'
-        self.env = patch.dict(os.environ, {"LITBENCH_CODEX": command, "LITBENCH_CLAUDE": command})
+        self.env = patch.dict(os.environ, {"ORBIS_CODEX": command, "ORBIS_CLAUDE": command})
         self.env.start()
 
     def tearDown(self):

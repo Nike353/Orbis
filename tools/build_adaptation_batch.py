@@ -109,7 +109,7 @@ def select_entries(entries, start_entry, count, excluded_arxiv_ids=None):
             skipped.append(entry)
         elif entry["arxiv_id"] in excluded_ids:
             entry["exclusion_reason"] = (
-                "This arXiv paper is already represented in the LitBench "
+                "This arXiv paper is already represented in the Orbis "
                 "graph, so it was replaced by the next eligible ledger entry."
             )
             skipped.append(entry)
