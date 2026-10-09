@@ -17,7 +17,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && python3 tools/build_data_js.py --check"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && python3 tools/build_data_js.py --check",
+    "desktop:dev": "npm run build && electron .",
+    "desktop:backend": "python3 scripts/build_desktop_backend.py",
+    "desktop:build": "npm run build && npm run desktop:backend && electron-builder",
+    "test:desktop": "node --test desktop/tests/*.test.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
@@ -46,6 +50,8 @@
     "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.10",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.16",
@@ -57,5 +63,55 @@
     "typescript-eslint": "^8.18.2",
     "vite": "^6.0.5",
     "vitest": "^4.1.10"
+  },
+  "main": "desktop/main.mjs",
+  "description": "Orbis — a personal research universe",
+  "author": "Orbis contributors",
+  "build": {
+    "appId": "org.orbis.research",
+    "productName": "Orbis",
+    "directories": {
+      "output": "release/desktop"
+    },
+    "files": [
+      "desktop/*.mjs",
+      "desktop/preload.cjs",
+      "package.json",
+      "!desktop/tests/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/desktop-backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "desktop",
+        "to": ".",
+        "filter": [
+          "google-client.json"
+        ]
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Education",
+      "maintainer": "Orbis contributors"
+    },
+    "artifactName": "Orbis-${version}-${os}-${arch}.${ext}"
   }
 }

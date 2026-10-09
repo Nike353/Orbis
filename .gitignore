@@ -19,3 +19,9 @@ release/
 # Personal independent libraries
 /graphs/
 /data/graphs.json
+
+# Local desktop builds, Google configuration, and recovery data
+/build/
+/desktop/google-client.json
+.orbis-sync-apply.json
+.orbis-backups/

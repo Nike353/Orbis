@@ -42,6 +42,10 @@ export function GraphSwitcher() {
     setBusy(true);
     setError('');
     try {
+      if (window.orbis) {
+        await window.orbis.openGraph(id);
+        return;
+      }
       const { url } = await request(`/${id}/open`, {});
       window.location.assign(url);
     } catch (e) {

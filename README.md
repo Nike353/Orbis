@@ -10,6 +10,12 @@ notes—all from a browser on your own computer.
 
 ## Get started
 
+**Desktop preview:** Orbis can now run in a native window with a bundled local
+service and optional encrypted Google Drive sync. The macOS preview has been
+tested locally; Linux packaging is configured and awaits runtime verification.
+See [desktop installation, Google setup, and build instructions](docs/DESKTOP.md).
+Installers have not yet been published. The terminal launch below remains available.
+
 Download this repository using **Code → Download ZIP** and unzip it. Open a
 terminal in the extracted folder and run:
 
@@ -130,9 +136,9 @@ library folder, including those directories.
 Application updates do not replace it. AI features send selected paper context
 to your configured provider; see [data handling](SECURITY.md) for details.
 
-For planned device sync and mobile access, see the
-[design proposal](docs/SYNC_AND_MOBILE.md). These are future capabilities, not
-currently enabled remote access.
+The desktop preview adds optional [encrypted Google Drive sync](docs/DESKTOP.md)
+for graphs, notes, and conversations. Original-paper caching and mobile access
+remain future work; see the [design proposal](docs/SYNC_AND_MOBILE.md).
 
 ## Need a hand?
 

@@ -79,6 +79,7 @@ active_run_lock = threading.Lock()
 active_run = None
 graph_catalog = None
 active_graph_id = "main"
+desktop_store = None
 queue_store = QueueStateStore()
 research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
 
@@ -217,6 +218,9 @@ class Handler(SimpleHTTPRequestHandler):
             return None
 
     def same_origin_ok(self):
+        desktop_token = os.environ.get("ORBIS_DESKTOP_TOKEN")
+        if desktop_token and self.headers.get("X-Orbis-Desktop") != desktop_token:
+            return False
         host = self.headers.get("Host", "")
         if host.startswith("["):
             hostname = host[1:].split("]", 1)[0]
@@ -233,6 +237,15 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path == "/api/desktop/snapshot":
+            if not os.environ.get("ORBIS_DESKTOP_TOKEN") or not self.same_origin_ok() or not desktop_store:
+                self.send_json(403, {"error": "Desktop session required"})
+                return
+            try:
+                self.send_json(200, desktop_store.access())
+            except (ValueError, OSError) as exc:
+                self.send_json(409, {"error": str(exc)})
+            return
         if parsed.path == "/api/graphs":
             if not self.same_origin_ok():
                 self.send_json(403, {"error": "cross-origin request rejected"})
@@ -415,6 +428,18 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def do_POST(self):
+        if self.path == "/api/desktop/apply":
+            if not os.environ.get("ORBIS_DESKTOP_TOKEN") or not self.same_origin_ok() or not desktop_store:
+                self.send_json(403, {"error": "Desktop session required"})
+                return
+            body = self.read_json_body(64 * 1024 * 1024)
+            try:
+                if not isinstance(body, dict) or set(body) != {"snapshot", "expected"}:
+                    raise ValueError("Invalid sync request")
+                self.send_json(200, desktop_store.access(body["snapshot"], body["expected"]))
+            except (ValueError, OSError, TypeError, KeyError) as exc:
+                self.send_json(409, {"error": str(exc)})
+            return
         if self.path == "/api/graphs" or self.path.startswith("/api/graphs/"):
             if not self.same_origin_ok():
                 self.send_json(403, {"error": "cross-origin request rejected"})
@@ -787,7 +812,7 @@ def configure_workspace(root, use_environment=True):
 
 
 def main():
-    global ROOT, graph_catalog
+    global ROOT, graph_catalog, desktop_store
     parser = argparse.ArgumentParser(description="Orbis local server")
     parser.add_argument("--port", type=int, help="Port to bind; defaults to an available port starting at 8000")
     parser.add_argument("--workspace", type=Path, help="Personal workspace directory; initializes an empty library when missing")
@@ -796,6 +821,11 @@ def main():
     if args.workspace:
         ROOT = args.workspace.expanduser().resolve()
     workspace_lock = configure_workspace(ROOT)
+    try:
+        from tools.desktop_sync import DesktopStore, recover
+    except ModuleNotFoundError:
+        from desktop_sync import DesktopStore, recover
+    recover(ROOT)
 
     if not (DIST / "index.html").exists():
         print(
@@ -833,6 +863,7 @@ def main():
         from tools.graph_catalog import GraphCatalog
     graph_catalog = GraphCatalog(ROOT, Path(__file__))
     graph_catalog.register_main(server)
+    desktop_store = DesktopStore(ROOT, graph_catalog, globals())
     print(
         "Orbis serving on http://127.0.0.1:%d  (Ctrl-C to stop)"
         % server.server_address[1], flush=True)

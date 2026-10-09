@@ -1,4 +1,5 @@
 import { GraphSwitcher } from './GraphSwitcher';
+import { DesktopSettings } from './DesktopSettings';
 import {
   CloudOff,
   Database,
@@ -80,6 +81,7 @@ export function AppHeader() {
       </label>
 
       <div className="header-actions">
+        <DesktopSettings />
         <div className="graph-view-switch" aria-label="Graph view">
           <button
             type="button"

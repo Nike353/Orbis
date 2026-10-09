@@ -150,4 +150,38 @@ describe('workspace store', () => {
     expect(state.dirty).toBe(false);
     expect(localStorage.getItem('litbench:v2:draft')).toBeNull();
   });
+  it('keeps edits made during an autosave and saves them against the acknowledged revision', async () => {
+    const id = graph.nodes[0].id;
+    let finish!: (response: Response) => void;
+    let firstBody!: { graph: typeof graph };
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      if (!firstBody) {
+        firstBody = body;
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      expect(body.base_revision).toBe(firstBody.graph.meta.revision);
+      return Promise.resolve(new Response(JSON.stringify(body.graph), { status: 200 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    useWorkspaceStore.getState().updateNode(id, { label: 'First edit' });
+    const saving = useWorkspaceStore.getState().save();
+    useWorkspaceStore.getState().updateNode(id, { label: 'Newer edit' });
+    const concurrent = useWorkspaceStore.getState().save();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    finish(new Response(JSON.stringify(firstBody.graph), { status: 200 }));
+    await Promise.all([saving, concurrent]);
+    expect(useWorkspaceStore.getState().dirty).toBe(true);
+    expect(useWorkspaceStore.getState().graph?.nodes.find((n) => n.id === id)?.label).toBe(
+      'Newer edit',
+    );
+    expect(localStorage.getItem('litbench:v2:draft')).not.toBeNull();
+    await useWorkspaceStore.getState().save();
+    expect(useWorkspaceStore.getState().dirty).toBe(false);
+    expect(useWorkspaceStore.getState().graph?.nodes.find((n) => n.id === id)?.label).toBe(
+      'Newer edit',
+    );
+  });
 });

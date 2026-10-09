@@ -3828,3 +3828,69 @@ a {
   outline: 2px solid #7794d0;
   outline-offset: 1px;
 }
+.desktop-settings {
+  max-width: 680px;
+  width: min(680px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.desktop-settings p {
+  line-height: 1.55;
+}
+.desktop-status {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
+  background: #eef4ff;
+  border-radius: 10px;
+  margin: 16px 0;
+}
+.desktop-setup,
+.desktop-recovery {
+  padding: 18px;
+  border: 1px solid #dce1eb;
+  border-radius: 10px;
+  margin: 16px 0;
+}
+.desktop-setup .button {
+  margin: 12px 8px 0 0;
+}
+.desktop-setup ol {
+  padding-left: 22px;
+  line-height: 1.65;
+}
+.desktop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.desktop-error {
+  background: #fff0ed;
+  padding: 12px;
+  border-radius: 8px;
+  color: #8e2b1e;
+}
+.desktop-recovery textarea {
+  width: 100%;
+  font-family: monospace;
+  padding: 12px;
+}
+.desktop-conflicts fieldset {
+  margin: 12px 0;
+  border: 1px solid #dce1eb;
+  border-radius: 8px;
+}
+.desktop-conflicts legend {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.desktop-conflicts pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 8px;
+  background: #f4f5f8;
+}

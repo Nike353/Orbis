@@ -11,6 +11,7 @@ import { DraftPrompt } from './components/DraftPrompt';
 import { LoadingState, WorkspaceError } from './components/WorkspaceStates';
 import { useWorkspaceStore } from './store/workspaceStore';
 import { ResearchDesk } from './components/ResearchDesk';
+import { DesktopLifecycle } from './components/DesktopSettings';
 
 export function App() {
   const load = useWorkspaceStore((state) => state.load);
@@ -43,6 +44,7 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <DesktopLifecycle />
       <AppHeader />
       <div className="workspace">
         <AppNav />

@@ -14,3 +14,6 @@ tests/fixtures/library/data/graph.js
 .venv/
 .litbench/
 uv.lock
+build/
+release/
+desktop/google-client.json

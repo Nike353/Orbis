@@ -95,6 +95,7 @@ function markDirty(
 }
 
 let toastId = 0;
+let pendingSave: Promise<SaveMode> | null = null;
 const initialTab: WorkspaceTab | null = null;
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -152,6 +153,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   refresh: async () => {
     const result = await loadGraph();
+    if (get().dirty) return;
     clearDraft();
     set((state) => ({
       graph: result.graph,
@@ -246,18 +248,31 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       filters: { ...state.filters, relations: relations(graph) },
     })),
 
-  save: async () => {
-    const { graph, baseRevision, mode } = get();
-    if (!graph || !mode) throw new Error('No graph is loaded.');
-    const result = await saveGraph(graph, baseRevision, mode);
-    clearDraft();
-    set({
-      graph: result.graph,
-      baseRevision: result.graph.meta.revision,
-      dirty: false,
-      draftAvailable: false,
+  save: () => {
+    if (pendingSave) return pendingSave;
+    pendingSave = (async () => {
+      const { graph, baseRevision, mode } = get();
+      if (!graph || !mode) throw new Error('No graph is loaded.');
+      const result = await saveGraph(graph, baseRevision, mode);
+      // Auto-save may finish after the user has made another edit. Keep that draft.
+      if (get().graph !== graph) {
+        const current = get().graph!;
+        persistDraft(current, result.graph.meta.revision);
+        set({ baseRevision: result.graph.meta.revision });
+        return result.mode;
+      }
+      clearDraft();
+      set({
+        graph: result.graph,
+        baseRevision: result.graph.meta.revision,
+        dirty: false,
+        draftAvailable: false,
+      });
+      return result.mode;
+    })().finally(() => {
+      pendingSave = null;
     });
-    return result.mode;
+    return pendingSave;
   },
 
   addToast: (message, tone = 'default') => {
