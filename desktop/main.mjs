@@ -9,13 +9,13 @@ import {
   Menu,
 } from 'electron';
 import { spawn } from 'node:child_process';
-import { readFile, mkdir, access } from 'node:fs/promises';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { atomic, SyncEngine } from './sync-engine.mjs';
 import { Drive, authorize, validateClient } from './google-drive.mjs';
+import { agentEnvironment } from './agent-environment.mjs';
 import {
   LEGACY_APP_NAME,
   TRANSFER_FLAG,
@@ -113,34 +113,11 @@ function status() {
 async function startBackend() {
   await mkdir(library, { recursive: true });
   const source = path.resolve(here, '..');
-  const env = {
+  const env = await agentEnvironment({
     ...process.env,
     ORBIS_DESKTOP_TOKEN: token,
     PYTHONUNBUFFERED: '1',
-    PATH: [
-      path.join(os.homedir(), '.local/bin'),
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      process.env.PATH || '',
-    ].join(path.delimiter),
-  };
-  // Existing custom CLI locations keep working during the rename.
-  env.ORBIS_CODEX ||= env.LITBENCH_CODEX;
-  env.ORBIS_CLAUDE ||= env.LITBENCH_CLAUDE;
-  for (const candidate of [
-    '/Applications/Codex.app/Contents/Resources/codex',
-    '/Applications/ChatGPT.app/Contents/Resources/codex',
-  ]) {
-    if (!env.ORBIS_CODEX)
-      try {
-        await access(candidate);
-        env.ORBIS_CODEX = JSON.stringify(candidate);
-      } catch {
-        /* optional */
-      }
-  }
+  });
   const executable = app.isPackaged
     ? path.join(process.resourcesPath, 'backend/orbis-server/orbis-server')
     : path.join(source, '.venv/bin/python');

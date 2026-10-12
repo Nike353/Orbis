@@ -5,6 +5,11 @@ service, opens your library, and stops the service when you quit. Python and Nod
 are bundled; users do not need a terminal to launch it. AI features still use your
 own installed, signed-in Codex or Claude Code CLI and its account limits.
 
+The desktop app checks your executable search path and common user-local install
+locations. On macOS it also detects the Codex CLI bundled inside Codex or ChatGPT,
+including apps installed in your home Applications folder. Explicit `ORBIS_CODEX`
+and `ORBIS_CLAUDE` settings take precedence. Restart Orbis after installing an agent.
+
 The Apple Silicon macOS preview has been built and tested locally, including a
 real Google sign-in and encrypted Drive upload. Linux AppImage and Debian package
 builds are configured, but Linux installation has not yet been verified. This is
