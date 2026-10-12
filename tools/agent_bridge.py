@@ -1216,6 +1216,29 @@ def _tool_event(name, detail):
     }
 
 
+def _codex_opened_urls(item):
+    """Read completed web page actions, never URLs merely mentioned in a search.
+
+    Codex exec reports built-in page reads as web_search items. A search result
+    or query containing a full-text URL is not evidence that the page was opened.
+    Keep requested/resolved page URLs exact, including their format and version.
+    """
+    action = item.get("action")
+    if (not isinstance(action, dict)
+            or action.get("type") not in ("open_page", "find_in_page")
+            or item.get("status") in ("failed", "in_progress")
+            or item.get("error")):
+        return []
+    candidates = [action.get("url")]
+    # The action URL can be an earlier reference ID. Structured result URLs also
+    # expose the resolved page after redirects; snippets and citations do not.
+    for result in item.get("results") or []:
+        if isinstance(result, dict) and result.get("type") == "text_result":
+            candidates.append(result.get("url"))
+    return list(dict.fromkeys(
+        url for url in candidates if _normalized_source_url(url) is not None))
+
+
 def stream_agent_events(proc, agent_id, emit):
     agent = next(
         (item for item in _agent_definitions() if item["id"] == agent_id),
@@ -1307,6 +1330,13 @@ def stream_agent_events(proc, agent_id, emit):
                     if item_id not in emitted_tools:
                         emit(_tool_event("Command", command))
                         emitted_tools.add(item_id)
+                elif item_type == "web_search":
+                    if event_type == "item.completed":
+                        result["webfetch_urls"].extend(_codex_opened_urls(item))
+                        action = item.get("action") or {}
+                        action_type = action.get("type", "search")
+                        label = {"open_page": "Open page", "find_in_page": "Read page"}.get(action_type, "Web search")
+                        emit(_tool_event(label, action.get("url") or item.get("query", "")))
                 elif (
                         "fetch" in item_type
                         or item_type in ("browser_open", "mcp_tool_call")):

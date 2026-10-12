@@ -133,12 +133,12 @@ export function AddPaperDialog() {
         null,
         controller.signal,
         (next) => {
+          if (next.type === 'error') throw new Error(next.message);
           setEvents((current) => [...current, next].slice(-30));
           if (next.type === 'done') {
             outcome = next.outcome;
             graphNodeId = next.graph_node_id;
           }
-          if (next.type === 'error') throw new Error(next.message);
         },
         sourceKind,
         settings,

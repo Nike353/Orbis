@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.agent_bridge import atomic_write_graph, stream_agent_events
+from tools.agent_bridge import atomic_write_graph, stream_agent_events, validate_full_text_source
 from tools.serve import Handler, manual_record, sanitize_line
 
 
@@ -15,6 +15,58 @@ class FakeProcess:
 
 
 class ServerHelpersTests(unittest.TestCase):
+
+    def test_codex_page_open_event_satisfies_exact_full_text_attestation(self):
+        # Shape observed from bundled Codex CLI 0.159.2, including the action
+        # initially being unknown and the completed item omitting status.
+        url = "https://arxiv.org/html/2610.09117"
+        process = FakeProcess([
+            {"type": "item.started", "item": {
+                "id": "web-1", "type": "web_search", "query": "",
+                "action": {"type": "other"}}},
+            {"type": "item.completed", "item": {
+                "id": "web-1", "type": "web_search", "query": url,
+                "action": {"type": "open_page", "url": url},
+                "results": [{"type": "text_result", "ref_id": "turn0view0",
+                    "snippet": "Total lines: 287", "url": url}]}},
+            {"type": "turn.completed"},
+        ])
+        emitted = []
+        result = stream_agent_events(process, "codex", emitted.append)
+        self.assertEqual(result["webfetch_urls"], [url])
+        self.assertEqual(emitted[0]["name"], "Open page")
+        self.assertEqual(emitted[0]["detail"], url)
+        record = manual_record(url)
+        source = {"url": url, "format": "arxiv-html",
+                  "evidence": "Methods and evaluation sections."}
+        self.assertEqual(validate_full_text_source(record, source, result["webfetch_urls"]), [])
+        self.assertTrue(validate_full_text_source(record, {**source, "url": url + "v1"}, result["webfetch_urls"]))
+
+    def test_codex_search_mentions_and_incomplete_reads_are_not_attestation(self):
+        url = "https://arxiv.org/html/2610.09117"
+        base = {"id": "web-1", "type": "web_search", "query": url,
+                "results": [{"type": "text_result", "url": url}]}
+        cases = [
+            ("item.completed", {**base, "action": {"type": "search", "query": url}}),
+            ("item.completed", {**base, "action": {"type": "other"}}),
+            ("item.completed", base),
+            ("item.started", {**base, "action": {"type": "open_page", "url": url}}),
+            ("item.completed", {**base, "action": {"type": "open_page", "url": url}, "status": "failed"}),
+            ("item.completed", {**base, "action": {"type": "open_page", "url": url}, "error": {"message": "Failed"}}),
+        ]
+        for event_type, item in cases:
+            with self.subTest(event_type=event_type, item=item):
+                result = stream_agent_events(FakeProcess([{"type": event_type, "item": item}]), "codex", lambda _: None)
+                self.assertEqual(result["webfetch_urls"], [])
+
+    def test_codex_resolved_page_references_ignore_urls_inside_page_content(self):
+        url = "https://arxiv.org/html/2610.09117v1"
+        item = {"id": "web-1", "type": "web_search",
+                "action": {"type": "find_in_page", "url": "turn0view0", "pattern": "Methods"},
+                "results": [{"type": "text_result", "url": url,
+                             "snippet": "See https://arxiv.org/pdf/2610.09117v1"}]}
+        result = stream_agent_events(FakeProcess([{"type": "item.completed", "item": item}]), "codex", lambda _: None)
+        self.assertEqual(result["webfetch_urls"], [url])
 
     def test_stream_parser_captures_structured_far_outcome(self):
         process = FakeProcess([
