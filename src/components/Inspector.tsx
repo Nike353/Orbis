@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, ExternalLink, FileText, HelpCircle, Link2, Save, X } from 'lucide-react';
+import {
+  Check,
+  ExternalLink,
+  FileText,
+  HelpCircle,
+  Link2,
+  Maximize2,
+  Minimize2,
+  Save,
+  X,
+} from 'lucide-react';
 import { indexNodes } from '../domain/graph';
 import type { GraphEdge, GraphNode, ReviewStatus } from '../domain/schema';
 import { useWorkspaceStore } from '../store/workspaceStore';
@@ -328,6 +338,19 @@ export function Inspector() {
   const graph = useWorkspaceStore((state) => state.graph)!;
   const selection = useWorkspaceStore((state) => state.selection);
   const select = useWorkspaceStore((state) => state.select);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const restore = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        setExpanded(false);
+      }
+    };
+    window.addEventListener('keydown', restore);
+    return () => window.removeEventListener('keydown', restore);
+  }, [expanded]);
+
   if (!selection) return null;
   const item =
     selection.kind === 'node'
@@ -336,23 +359,43 @@ export function Inspector() {
   if (!item) return null;
 
   return (
-    <aside className="inspector" aria-label="Graph inspector">
+    <aside
+      className={`inspector${expanded ? ' inspector-expanded' : ''}`}
+      aria-label="Graph inspector"
+    >
       <div className="inspector-topbar">
-        <span>Inspector</span>
-        <button
-          className="icon-button"
-          onClick={() => select(null)}
-          aria-label="Close inspector"
-        >
-          <X size={18} />
-        </button>
+        <span>{expanded ? 'Reading view' : 'Inspector'}</span>
+        <div className="inspector-window-controls">
+          <button
+            className="button secondary inspector-expand"
+            onClick={() => setExpanded((current) => !current)}
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Restore notes panel' : 'Maximize notes panel'}
+            title={expanded ? 'Restore notes panel (Esc)' : 'Maximize notes panel'}
+          >
+            {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {expanded ? 'Back to graph' : 'Expand'}
+          </button>
+          <button
+            className="icon-button"
+            onClick={() => {
+              setExpanded(false);
+              select(null);
+            }}
+            aria-label="Close inspector"
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
       <div className="inspector-scroll">
-        {selection.kind === 'node' ? (
-          <NodeInspector node={item as GraphNode} />
-        ) : (
-          <EdgeInspector edge={item as GraphEdge} />
-        )}
+        <div className="inspector-content">
+          {selection.kind === 'node' ? (
+            <NodeInspector node={item as GraphNode} />
+          ) : (
+            <EdgeInspector edge={item as GraphEdge} />
+          )}
+        </div>
       </div>
     </aside>
   );

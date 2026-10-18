@@ -3894,3 +3894,47 @@ a {
   padding: 8px;
   background: #f4f5f8;
 }
+
+/* Expand the existing panel without remounting drafts or the graph. */
+.inspector-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inspector-expand {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 11px;
+  text-transform: none;
+}
+.workspace:has(> .inspector-expanded) > :not(.inspector-expanded) {
+  visibility: hidden;
+}
+.inspector.inspector-expanded {
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  border-left: 0;
+  box-shadow: none;
+}
+.inspector-expanded .inspector-content {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px 0 48px;
+}
+.inspector-expanded .markdown-content,
+.inspector-expanded .paper-details ul {
+  font-size: 16px;
+  line-height: 1.8;
+}
+.inspector-expanded .paper-details h3 {
+  font-size: 22px;
+}
+.inspector-expanded .paper-details .authors,
+.inspector-expanded .paper-meta {
+  font-size: 12px;
+}
+.inspector-expanded .notes-preview {
+  max-height: none;
+  overflow: visible;
+}
