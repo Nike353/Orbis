@@ -31,6 +31,13 @@ import {
   Shapes,
   X,
 } from 'lucide-react';
+import { ConnectionPreview } from './ConnectionPreview';
+import {
+  membershipHoverVisible,
+  nextSceneHover,
+  resolveSceneHover,
+  type SceneHover,
+} from './graph/sceneHover';
 import { filterGraph } from '../domain/graph';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import {
@@ -58,8 +65,6 @@ interface OrbitControlsLike {
 
 type GraphNode = NodeObject<SceneNode>;
 type GraphLink = LinkObject<SceneNode, SceneLink>;
-type HoveredItem =
-  { kind: 'node'; node: SceneNode } | { kind: 'link'; link: SceneLink } | null;
 
 function supportsWebGL() {
   try {
@@ -128,7 +133,7 @@ export function GraphScene() {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods<SceneNode, SceneLink> | undefined>(undefined);
   const [size, setSize] = useState({ width: 900, height: 640 });
-  const [hovered, setHovered] = useState<HoveredItem>(null);
+  const [hovered, setHovered] = useState<SceneHover>(null);
   const [hasWebGL] = useState(supportsWebGL);
   const [renderFailure, setRenderFailure] = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
@@ -169,8 +174,12 @@ export function GraphScene() {
     ? graph.nodes.find((node) => node.id === filters.clusterId)
     : null;
 
-  const hoveredNode = hovered?.kind === 'node' ? hovered.node : null;
-  const hoveredLink = hovered?.kind === 'link' ? hovered.link : null;
+  const activeHover = resolveSceneHover(sceneData, hovered);
+  const hoveredNode = activeHover?.kind === 'node' ? activeHover.node : null;
+  const hoveredLink = activeHover?.kind === 'link' ? activeHover.link : null;
+  function updateHover(candidate: SceneHover) {
+    setHovered((current) => nextSceneHover(sceneData, current, candidate));
+  }
   const hoveredPaperId =
     hoveredNode?.kind === 'paper'
       ? hoveredNode.id
@@ -439,12 +448,7 @@ export function GraphScene() {
   }
 
   function membershipVisible(link: SceneLink) {
-    return (
-      link.kind === 'membership' &&
-      (link.highlighted ||
-        link.paperId === hoveredPaperId ||
-        link.clusterId === hoveredClusterId)
-    );
+    return membershipHoverVisible(link, hoveredPaperId, hoveredClusterId);
   }
 
   function relationVisible(link: SceneLink) {
@@ -458,6 +462,7 @@ export function GraphScene() {
   }
 
   function selectNode(node: SceneNode) {
+    setHovered(null);
     setAutoRotate(false);
     select({ kind: 'node', id: node.id });
   }
@@ -473,7 +478,6 @@ export function GraphScene() {
       : hoveredLink?.kind === 'membership'
         ? sceneData.fieldNodes.find((node) => node.id === hoveredLink.clusterId)
         : null;
-  const tooltipLink = hoveredLink?.kind === 'relation' ? hoveredLink : null;
 
   return (
     <div
@@ -672,11 +676,11 @@ export function GraphScene() {
           cooldownTicks={0}
           cooldownTime={0}
           onNodeHover={(node) =>
-            setHovered(node ? { kind: 'node', node: node as SceneNode } : null)
+            updateHover(node ? { kind: 'node', node: node as SceneNode } : null)
           }
           onNodeClick={(node) => selectNode(node as SceneNode)}
           onLinkHover={(link) =>
-            setHovered(link ? { kind: 'link', link: link as SceneLink } : null)
+            updateHover(link ? { kind: 'link', link: link as SceneLink } : null)
           }
           onLinkClick={(link) => {
             const item = link as SceneLink;
@@ -685,7 +689,10 @@ export function GraphScene() {
               select({ kind: 'edge', id: item.id });
             }
           }}
-          onBackgroundClick={() => select(null)}
+          onBackgroundClick={() => {
+            setHovered(null);
+            select(null);
+          }}
         />
       ) : sceneData.nodes.length === 0 ? (
         <div className="graph-empty" role="status">
@@ -701,32 +708,25 @@ export function GraphScene() {
         />
       )}
 
-      {hovered && (tooltipNode || tooltipField || tooltipLink) && (
+      {hoveredLink ? (
+        <ConnectionPreview
+          link={hoveredLink}
+          graph={graph}
+          onClose={() => setHovered(null)}
+          onOpen={(id) => {
+            setHovered(null);
+            setAutoRotate(false);
+            select({ kind: 'edge', id });
+          }}
+        />
+      ) : activeHover && (tooltipNode || tooltipField) ? (
         <div className="universe-tooltip" role="status">
           <i
             style={{
-              background:
-                tooltipField?.clusterColor ??
-                tooltipNode?.clusterColor ??
-                tooltipLink?.color,
+              background: tooltipField?.clusterColor ?? tooltipNode?.clusterColor,
             }}
           />
-          {tooltipLink?.original ? (
-            <div>
-              <small>
-                {tooltipLink.original.relation} ·{' '}
-                {Math.round(tooltipLink.original.confidence * 100)}% confidence
-              </small>
-              <strong>{tooltipLink.original.transition_note}</strong>
-              <span>
-                {sceneData.nodes.find((node) => node.id === tooltipLink.original?.source)
-                  ?.label ?? tooltipLink.original.source}
-                {' → '}
-                {sceneData.nodes.find((node) => node.id === tooltipLink.original?.target)
-                  ?.label ?? tooltipLink.original.target}
-              </span>
-            </div>
-          ) : tooltipField ? (
+          {tooltipField ? (
             <div>
               <small>
                 {tooltipField.primaryCount ?? 0} core · {tooltipField.bridgeCount ?? 0}{' '}
@@ -755,7 +755,7 @@ export function GraphScene() {
             </div>
           ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

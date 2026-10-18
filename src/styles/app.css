@@ -3938,3 +3938,76 @@ a {
   max-height: none;
   overflow: visible;
 }
+
+/* Connection previews keep the full note available for reading and scrolling. */
+.connection-preview {
+  position: absolute;
+  z-index: 16;
+  left: 16px;
+  bottom: 16px;
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - 90px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #eaf2f5;
+  background: #101e26;
+  border: 1px solid #4e6775;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px #0008;
+}
+.connection-preview header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #334953;
+}
+.connection-preview header strong {
+  font-size: 14px;
+}
+.connection-preview .icon-button {
+  color: #eaf2f5;
+}
+.connection-preview-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 18px 18px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.connection-preview-route {
+  color: #afc7d1;
+  font-size: 12px;
+}
+.connection-preview-note + .connection-preview-note {
+  border-top: 1px solid #334953;
+  margin-top: 18px;
+  padding-top: 10px;
+}
+.connection-preview-note h3 {
+  font-size: 14px;
+}
+.connection-preview-note h3 small {
+  color: #afc7d1;
+  font-size: 11px;
+  font-weight: 400;
+}
+.connection-preview-note h4 {
+  margin-bottom: 6px;
+}
+.connection-preview .markdown-content {
+  font-size: 14px;
+  white-space: normal;
+}
+.connection-preview .markdown-content a {
+  color: #95d8ff;
+}
+.connection-preview .markdown-content code {
+  background: #253e4a;
+}
+.connection-preview .markdown-content blockquote {
+  color: #b8ccd4;
+}
