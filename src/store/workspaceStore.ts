@@ -21,7 +21,7 @@ import {
 
 export type Selection = { kind: 'node' | 'edge'; id: string } | null;
 export type WorkspaceTab =
-  'library' | 'review' | 'filters' | 'imports' | 'research' | 'compare';
+  'library' | 'review' | 'filters' | 'imports' | 'research' | 'compare' | 'activity';
 export type GraphView = 'lineages' | 'universe';
 
 interface Filters {
@@ -54,7 +54,22 @@ interface WorkspaceState {
   graphView: GraphView;
   researchScope: string[];
   researchNonce: number;
-  openResearch: (ids: string[], compare?: boolean) => void;
+  researchSessionId: string | null;
+  paperWorkspace: {
+    nodeId: string;
+    documentId?: string;
+    page?: number;
+    tab?: 'Summary' | 'My notes' | 'Discuss' | 'Connections';
+    nonce: number;
+  } | null;
+  openPaper: (
+    nodeId: string,
+    documentId?: string,
+    page?: number,
+    tab?: 'Summary' | 'My notes' | 'Discuss' | 'Connections',
+  ) => void;
+  closePaper: () => void;
+  openResearch: (ids: string[], compare?: boolean, sessionId?: string) => void;
   filters: Filters;
   toasts: Toast[];
   load: () => Promise<void>;
@@ -113,10 +128,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   graphView: 'universe',
   researchScope: [],
   researchNonce: 0,
-  openResearch: (ids, compare = false) =>
+  researchSessionId: null,
+  paperWorkspace: null,
+  openPaper: (nodeId, documentId, page, tab) =>
+    set((state) => {
+      if (!state.graph?.nodes.some((node) => node.id === nodeId && node.type === 'paper'))
+        return {};
+      return {
+        paperWorkspace: {
+          nodeId,
+          documentId,
+          page,
+          tab,
+          nonce: (state.paperWorkspace?.nonce ?? 0) + 1,
+        },
+        selection: { kind: 'node', id: nodeId },
+      };
+    }),
+  closePaper: () => set({ paperWorkspace: null }),
+  openResearch: (ids, compare = false, sessionId) =>
     set((state) => ({
       activeTab: compare ? 'compare' : 'research',
       researchScope: ids,
+      researchSessionId: sessionId ?? null,
       researchNonce: state.researchNonce + 1,
     })),
   filters: {

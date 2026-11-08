@@ -2,10 +2,11 @@ import json
 import tempfile
 import unittest
 import urllib.request
+from urllib.error import HTTPError
 from pathlib import Path
 from tools.graph_catalog import GraphCatalog
 from tools.workspace import initialize_workspace
-from tools.agent_bridge import atomic_write_graph
+from tools.agent_bridge import atomic_write_graph, atomic_write_json
 
 APP = Path(__file__).resolve().parent.parent
 
@@ -61,3 +62,38 @@ class GraphCatalogTests(unittest.TestCase):
         for name in ('', '   ', 'x' * 101, None):
             with self.assertRaises(ValueError):
                 self.catalog.create(name)
+
+    def test_pending_library_sync_blocks_child_edits_and_new_graphs(self):
+        child = self.catalog.create("Independent")
+        url = self.catalog.open(child["id"])["url"]
+        graph = request(url + "api/graph")
+        graph["meta"]["revision"] += 1
+        atomic_write_json(self.root / ".orbis-sync-apply.json", {})
+        with self.assertRaises(HTTPError) as failure:
+            request(url + "api/graph", {"base_revision": 0, "graph": graph}, "PUT")
+        self.assertEqual(failure.exception.code, 409)
+        failure.exception.close()
+        with self.assertRaisesRegex(ValueError, "sync transaction"):
+            self.catalog.create("Must wait")
+        self.assertEqual(len(self.catalog.read()), 1)
+        (self.root / ".orbis-sync-apply.json").unlink()
+
+    def test_removed_graph_rejects_edits_without_deleting_saved_files(self):
+        child = self.catalog.create("Independent")
+        url = self.catalog.open(child["id"])["url"]
+        graph = request(url + "api/graph")
+        graph["meta"]["revision"] += 1
+        root = self.root / "graphs" / child["id"]
+        original = (root / "data/graph.json").read_bytes()
+        atomic_write_json(self.root / "data/graphs.json", [])
+        with self.assertRaises(HTTPError) as failure:
+            request(url + "api/graph", {"base_revision": 0, "graph": graph}, "PUT")
+        self.assertEqual(failure.exception.code, 409)
+        self.assertIn("no longer in the library", failure.exception.read().decode())
+        failure.exception.close()
+        with self.assertRaises(HTTPError) as failure:
+            request(url + "api/research", {"title": "Unsynced", "scope_ids": [], "criteria": []})
+        self.assertEqual(failure.exception.code, 409)
+        failure.exception.close()
+        self.assertEqual((root / "data/graph.json").read_bytes(), original)
+        self.assertEqual(self.catalog.listing(child["id"])["graphs"][0]["id"], "main")

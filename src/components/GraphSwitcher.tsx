@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { flushPaperDrafts } from '../services/draftLifecycle';
+import { flushDesktopPreferences } from '../services/preferences';
 
 type Library = { id: string; name: string; sources: number; active: boolean };
 async function request(path: string, body?: object) {
@@ -42,6 +44,8 @@ export function GraphSwitcher() {
     setBusy(true);
     setError('');
     try {
+      await flushPaperDrafts();
+      await flushDesktopPreferences();
       if (window.orbis) {
         await window.orbis.openGraph(id);
         return;

@@ -18,6 +18,20 @@
   apply.
 - `tools/retrieve_arxiv.py`: metadata-only arXiv retrieval. It never reads a
   PDF, assesses semantic relevance, summarizes, clusters, or edits the graph.
+- `tools/documents.py`: immutable local originals, validated attachment/highlight
+  records, bounded page extraction and FTS retrieval. Extraction caches and
+  unsaved comment drafts are device-local.
+- `tools/research.py`: scoped conversations, bounded original passages, validated
+  citation anchors, and explicitly reviewed graph changes. Portable content
+  fingerprints protect pending proposals across device-local revision changes.
+- `tools/activity.py`: durable local import history; the server combines it with
+  document retrieval, research, and batch work for Activity.
+- `desktop/sync-*.mjs` and `tools/desktop_sync.py`: encrypted immutable Drive
+  snapshots and original blobs, three-way merge, CAS apply, backups, and recovery.
+  `desktop/library-import.mjs` validates folder import and stages verified blobs;
+  `desktop/main.mjs` owns OS access, trusted IPC, and native lifecycle.
+- `desktop/ui-preferences.mjs` and `src/services/preferences.ts`: device-local
+  agent/model preferences survive changing loopback ports and app restarts.
 
 ## Data Flow
 
@@ -25,6 +39,17 @@
 falls back to static JSON, then to generated `data/graph.js`. API saves include
 the loaded base revision; stale writes receive HTTP 409. Successful writes
 atomically replace JSON and its mirror.
+
+`data/documents.json` and `data/annotations.json` hold portable original/highlight
+metadata. Original bytes live at `attachments/<sha256>.blob`; the local FTS cache,
+reading position, pins, transfer state, and unsent drafts live in `.orbis/`.
+Each independent graph owns these files. See [the storage contract](SCHEMA.md).
+
+`PaperWorkspace` keeps `GraphScene` mounted beneath the reader. Covered scenes
+pause animation and camera changes; returning resumes the same canvas, filters,
+lens, and camera. Notes, comments, discussion drafts, and reading position flush
+before graph navigation or native quit. Sync cannot delete unsaved paper/comment
+drafts, and an unfinished sync journal blocks edits until recovery.
 
 Schema v1 files migrate in memory to v2. Zod validates required fields,
 ownership/status values, duplicate IDs, cluster membership, edge endpoints,
@@ -58,3 +83,9 @@ server-owned processing ledger. Browser storage is not authoritative.
 - Playwright: desktop/mobile rendering, WebGL pixel distribution, search,
   filters, inspection, review, Add Paper, export, malformed import, revision
   conflict, and token-free agent cancellation.
+- Desktop Node tests: immutable encrypted originals, simulated independent-device
+  transfers/conflicts, corruption, quota/offline recovery, folder import, and
+  profile preference persistence.
+- Manual packaged smoke: `node desktop/tests/native-smoke.mjs <executable>`.
+  It uses synthetic libraries, a separate profile, sandboxed software WebGL, and
+  deterministic agent fixtures; it does not authenticate Google or a provider.

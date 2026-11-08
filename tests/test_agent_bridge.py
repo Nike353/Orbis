@@ -2,6 +2,7 @@ import copy
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -576,7 +577,8 @@ class QueueStateTests(unittest.TestCase):
         "tools.agent_bridge.shutil.which",
         side_effect=lambda command: f"/usr/bin/{command}",
     )
-    def test_claude_command_uses_safe_mode_and_structured_output(self, _which):
+    @patch("tools.agent_bridge.agent_profile", return_value={"startup_arguments": ["--safe-mode"]})
+    def test_claude_command_uses_safe_mode_and_structured_output(self, _profile, _which):
         with tempfile.TemporaryDirectory() as workspace:
             command = build_agent_command(
                 "claude", "test prompt", workspace, max_turns=12)
@@ -584,12 +586,15 @@ class QueueStateTests(unittest.TestCase):
         self.assertIn("--safe-mode", command)
         self.assertIn("--json-schema", command)
         self.assertIn("--no-session-persistence", command)
+        self.assertNotIn("--restricted", command)
 
     @patch(
         "tools.agent_bridge.shutil.which",
         side_effect=lambda command: f"/usr/bin/{command}",
     )
-    def test_codex_command_uses_local_sandbox_and_schema(self, _which):
+    @patch("tools.agent_bridge.subprocess.run",
+           return_value=subprocess.CompletedProcess([], 0, stdout='[{"name":"fixture-mcp"}]'))
+    def test_codex_command_uses_local_sandbox_and_schema(self, _probe, _which):
         with tempfile.TemporaryDirectory() as workspace:
             command = build_agent_command(
                 "codex", "test prompt", workspace, max_turns=12)
@@ -597,6 +602,12 @@ class QueueStateTests(unittest.TestCase):
         self.assertIn("--ephemeral", command)
         self.assertIn("--output-schema", command)
         self.assertIn("sandbox_workspace_write.network_access=true", command)
+        self.assertIn('mcp_servers.fixture-mcp.enabled=false', command)
+        self.assertIn("features.plugins=false", command)
+        probe = _probe.call_args.args[0]
+        self.assertIn("features.plugins=false", probe)
+        self.assertIn("features.apps=false", probe)
+        self.assertEqual(probe[-3:], ["mcp", "list", "--json"])
 
     @patch(
         "tools.agent_bridge.shutil.which",

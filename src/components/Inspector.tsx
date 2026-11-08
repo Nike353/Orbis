@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Check,
+  BookOpen,
   ExternalLink,
   FileText,
   HelpCircle,
   Link2,
   Maximize2,
+  MessagesSquare,
   Minimize2,
   Save,
+  Table2,
   X,
 } from 'lucide-react';
 import { indexNodes } from '../domain/graph';
@@ -56,6 +59,7 @@ function NodeInspector({ node }: { node: GraphNode }) {
   const select = useWorkspaceStore((state) => state.select);
   const addToast = useWorkspaceStore((state) => state.addToast);
   const openResearch = useWorkspaceStore((state) => state.openResearch);
+  const openPaper = useWorkspaceStore((state) => state.openPaper);
   const [notes, setNotes] = useState(node.notes ?? '');
   const [sourceNote, setSourceNote] = useState('');
   const [label, setLabel] = useState(node.label);
@@ -117,16 +121,38 @@ function NodeInspector({ node }: { node: GraphNode }) {
         <span className={`status-pill ${node.status}`}>{node.status}</span>
         <span>{node.origin === 'user' ? 'Researcher owned' : 'Agent proposal'}</span>
       </div>
-      <div className="inspector-research-actions">
-        <button className="button primary" onClick={() => openResearch([node.id])}>
-          Discuss this {node.type}
+      <div
+        className="inspector-research-actions"
+        role="group"
+        aria-label="Research actions"
+      >
+        {node.paper && (
+          <button
+            className="button primary"
+            aria-label="Read paper"
+            onClick={() => openPaper(node.id)}
+          >
+            <BookOpen size={14} aria-hidden="true" /> Read
+          </button>
+        )}
+        <button
+          className="button secondary"
+          aria-label={`Discuss this ${node.type}`}
+          onClick={() =>
+            node.paper
+              ? openPaper(node.id, undefined, undefined, 'Discuss')
+              : openResearch([node.id])
+          }
+        >
+          <MessagesSquare size={14} aria-hidden="true" /> Discuss
         </button>
         {node.type === 'paper' && (
           <button
             className="button secondary"
+            aria-label="Compare with papers"
             onClick={() => openResearch([node.id], true)}
           >
-            Compare with papers
+            <Table2 size={14} aria-hidden="true" /> Compare
           </button>
         )}
       </div>

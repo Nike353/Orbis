@@ -26,3 +26,8 @@ release/
 /desktop/google-client.json
 .orbis-sync-apply.json
 .orbis-backups/
+
+# Research originals, portable annotations, and device-local extraction caches
+/attachments/
+/data/documents.json
+/data/annotations.json

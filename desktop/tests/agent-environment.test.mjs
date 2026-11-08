@@ -94,3 +94,43 @@ test('Linux keeps normal CLI discovery and never selects a macOS bundle', async 
   );
   assert.equal(env.ORBIS_CODEX, undefined);
 });
+
+test('desktop launches discover both agents in common local install locations', async (t) => {
+  const options = await fixture(t);
+  const codex = path.join(options.home, '.toolbox/bin/codex');
+  const claude = path.join(options.home, '.local/bin/claude');
+  await makeExecutable(codex);
+  await makeExecutable(claude);
+  const env = await agentEnvironment(
+    { PATH: '/usr/bin:/bin' },
+    { home: options.home, platform: 'linux' },
+  );
+  assert.equal(JSON.parse(env.ORBIS_CODEX), codex);
+  assert.equal(JSON.parse(env.ORBIS_CLAUDE), claude);
+});
+
+test('npm agents use their own Node installation even in different version directories', async (t) => {
+  const options = await fixture(t);
+  const codexBin = path.join(options.home, '.nvm/versions/node/v22.12.0/bin');
+  const claudeBin = path.join(
+    options.home,
+    '.local/share/fnm/node-versions/v24.2.0/installation/bin',
+  );
+  for (const [directory, agent] of [
+    [codexBin, 'codex'],
+    [claudeBin, 'claude'],
+  ]) {
+    await makeExecutable(path.join(directory, 'node'));
+    await makeExecutable(path.join(directory, agent));
+    await writeFile(path.join(directory, agent), '#!/usr/bin/env node\n');
+  }
+  const env = await agentEnvironment({ PATH: '/usr/bin:/bin' }, options);
+  assert.equal(
+    env.ORBIS_CODEX,
+    `${JSON.stringify(path.join(codexBin, 'node'))} ${JSON.stringify(path.join(codexBin, 'codex'))}`,
+  );
+  assert.equal(
+    env.ORBIS_CLAUDE,
+    `${JSON.stringify(path.join(claudeBin, 'node'))} ${JSON.stringify(path.join(claudeBin, 'claude'))}`,
+  );
+});

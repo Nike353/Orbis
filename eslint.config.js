@@ -14,6 +14,8 @@ export default tseslint.config(
       'node_modules',
       'build',
       'release',
+      'test-results',
+      'playwright-report',
     ],
   },
   {

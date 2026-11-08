@@ -8,10 +8,10 @@ from pathlib import Path
 
 try:
     from agent_bridge import atomic_write_json, atomic_write_graph
-    from workspace import initialize_workspace
+    from workspace import initialize_workspace, ensure_library_writable
 except ModuleNotFoundError:
     from tools.agent_bridge import atomic_write_json, atomic_write_graph
-    from tools.workspace import initialize_workspace
+    from tools.workspace import initialize_workspace, ensure_library_writable
 
 
 class GraphCatalog:
@@ -62,6 +62,7 @@ class GraphCatalog:
         if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
             raise ValueError("Choose a graph name between 1 and 100 characters.")
         with self.lock:
+            ensure_library_writable(self.root)
             entries = self.read()
             if len(entries) >= 100:
                 raise ValueError("This workspace has reached its 100-graph limit.")
@@ -110,6 +111,8 @@ class GraphCatalog:
                 continue
             module.cancel_active_run()
             for event in list(module.research_store.active.values()):
+                event.set()
+            for event in list(module.document_store.active.values()):
                 event.set()
             if module.insert_lock.acquire(timeout=5):
                 module.insert_lock.release()

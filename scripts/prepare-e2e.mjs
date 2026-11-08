@@ -1,6 +1,7 @@
 import { cp, mkdir } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 
 const targetArgument = process.argv[2];
 if (!targetArgument) {
@@ -14,6 +15,15 @@ if (!isAbsolute(target) || !target.startsWith(`${temporaryRoot}/`)) {
 }
 
 await mkdir(target, { recursive: true });
+execFileSync(resolve('.venv/bin/python'), [
+  'tests/fixtures/reader_pdf.py',
+  `${target}/reader-fixture.pdf`,
+]);
+execFileSync(resolve('.venv/bin/python'), [
+  'tests/fixtures/reader_pdf.py',
+  `${target}/reader-citations.pdf`,
+  '--citations',
+]);
 for (const source of ['dist', 'docs', 'prompts', 'tools']) {
   await cp(source, `${target}/${source}`, {
     recursive: true,

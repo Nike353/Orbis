@@ -1,4 +1,4 @@
-import { readPreference } from '../services/preferences';
+import { readPreference, writePreference } from '../services/preferences';
 import { AgentModelSettings } from './AgentModelSettings';
 import { useAgentSettings } from '../store/agentSettings';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
@@ -48,18 +48,22 @@ export function AddPaperDialog() {
   const open = useWorkspaceStore((state) => state.addPaperOpen);
   const setOpen = useWorkspaceStore((state) => state.setAddPaperOpen);
   const dirty = useWorkspaceStore((state) => state.dirty);
-  const reloadGraph = useWorkspaceStore((state) => state.load);
+  const reloadGraph = useWorkspaceStore((state) => state.refresh);
   const select = useWorkspaceStore((state) => state.select);
   const [url, setUrl] = useState('');
   const [sourceKind, setSourceKind] = useState<'paper' | 'blog' | 'website'>('paper');
   const [hint, setHint] = useState('');
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [agentId, setAgentId] = useState<LocalAgent['id'] | ''>('');
-  const { choice: settings } = useAgentSettings(agentId);
+  const { choice: settings } = useAgentSettings(
+    agentId,
+    health?.agents.find((agent) => agent.id === agentId),
+  );
   const [running, setRunning] = useState(false);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const jobId = useRef<string>();
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +74,7 @@ export function AddPaperDialog() {
       if (next) setAgentId((current) => chooseAgent(next, current));
     });
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !running) setOpen(false);
+      if (event.key === 'Escape') setOpen(false);
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => {
@@ -80,19 +84,19 @@ export function AddPaperDialog() {
   }, [open, running, setOpen]);
 
   useEffect(() => {
-    if (agentId) window.localStorage.setItem('orbis.agent', agentId);
+    if (agentId) writePreference('orbis.agent', agentId);
   }, [agentId]);
 
   function close() {
-    if (running) return;
     setOpen(false);
+    if (running) return;
     setEvents([]);
     setError(null);
   }
 
   async function cancel() {
     try {
-      await cancelAgentInsertion();
+      await cancelAgentInsertion(jobId.current);
     } finally {
       controllerRef.current?.abort();
     }
@@ -120,6 +124,7 @@ export function AddPaperDialog() {
     }
 
     const controller = new AbortController();
+    jobId.current = undefined;
     controllerRef.current = controller;
     setRunning(true);
     let outcome: 'inserted' | 'excluded' | 'duplicate' | null = null;
@@ -133,6 +138,7 @@ export function AddPaperDialog() {
         null,
         controller.signal,
         (next) => {
+          if (next.type === 'start') jobId.current = next.job_id;
           if (next.type === 'error') throw new Error(next.message);
           setEvents((current) => [...current, next].slice(-30));
           if (next.type === 'done') {
@@ -192,7 +198,6 @@ export function AddPaperDialog() {
             type="button"
             className="icon-button"
             onClick={close}
-            disabled={running}
             aria-label="Close add paper dialog"
           >
             <X size={18} />
@@ -205,6 +210,7 @@ export function AddPaperDialog() {
             <span className="dialog-agent-select">
               <Bot size={15} aria-hidden="true" />
               <select
+                aria-label="Agent"
                 value={agentId}
                 onChange={(event) => setAgentId(event.target.value as LocalAgent['id'])}
                 disabled={running}
@@ -310,13 +316,18 @@ export function AddPaperDialog() {
             <span>{dirty ? 'Unsaved graph edits' : 'localhost only'}</span>
             <div>
               {running && (
-                <button
-                  type="button"
-                  className="button danger"
-                  onClick={() => void cancel()}
-                >
-                  <CircleStop size={15} /> Cancel
-                </button>
+                <>
+                  <button type="button" className="button secondary" onClick={close}>
+                    Continue in background
+                  </button>
+                  <button
+                    type="button"
+                    className="button danger"
+                    onClick={() => void cancel()}
+                  >
+                    <CircleStop size={15} /> Cancel
+                  </button>
+                </>
               )}
               <button
                 type="submit"

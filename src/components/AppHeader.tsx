@@ -128,6 +128,7 @@ export function AppHeader() {
         <button
           className="button secondary add-paper-button"
           aria-label="Add paper"
+          title="Add paper or web source"
           onClick={() => setAddPaperOpen(true)}
         >
           <Plus size={16} aria-hidden="true" />
@@ -151,6 +152,7 @@ export function AppHeader() {
         <button
           className="button primary save-button"
           aria-label={dirty ? 'Save changes' : 'Saved'}
+          title={dirty ? 'Save changes' : 'Saved'}
           onClick={() => void handleSave()}
           disabled={!dirty || loading}
         >

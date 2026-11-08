@@ -3,7 +3,10 @@ name = "orbis"
 version = "2.0.0"
 description = "A local workspace for connected research"
 requires-python = ">=3.12"
-dependencies = ["nodeenv==1.9.1"]
+dependencies = [
+    "nodeenv==1.9.1",
+    "pypdf==7.0.0",
+]
 
 [tool.uv]
 package = false

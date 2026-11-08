@@ -59,8 +59,9 @@ export default defineConfig({
       `ORBIS_CLAUDE='bash "${repositoryRoot}/tests/fixtures/bin/claude"' ` +
       `ORBIS_CODEX="${e2eRoot}/not-installed-codex" ` +
       `ORBIS_DEFAULT_AGENT=claude ` +
+      `ORBIS_E2E_FIXTURE=1 ORBIS_TEST_PYTHON="${repositoryRoot}/.venv/bin/python" ` +
       `ORBIS_STATE_PATH="${e2eStatePath}" ` +
-      `python3 tools/serve.py --port 4173`,
+      `"${repositoryRoot}/.venv/bin/python" tools/serve.py --port 4173`,
     url: 'http://127.0.0.1:4173/api/health',
     reuseExistingServer: false,
     timeout: 120_000,

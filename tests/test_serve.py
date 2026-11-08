@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.agent_bridge import atomic_write_graph, stream_agent_events, validate_full_text_source
+from tools.agent_bridge import atomic_write_graph, stream_agent_events, validate_full_text_source, BridgeContractError
 from tools.serve import Handler, manual_record, sanitize_line
 
 
@@ -15,6 +15,20 @@ class FakeProcess:
 
 
 class ServerHelpersTests(unittest.TestCase):
+
+    def test_adapters_ignore_malformed_shapes_and_reject_oversized_events(self):
+        for agent in ("codex", "claude"):
+            process = FakeProcess([None, [], "unstructured", {"type": "assistant", "message": []},
+                                   {"type": "assistant", "message": {"content": [None, [], {"type": "text", "text": {}}]}},
+                                   {"type": "item.completed", "item": []},
+                                   {"type": "result", "duration_ms": "unknown", "total_cost_usd": "free",
+                                    "structured_output": []}])
+            result = stream_agent_events(process, agent, lambda _: None)
+            self.assertIsNone(result["structured_output"])
+            self.assertIsNone(result["duration_s"])
+            process.stdout = ["X" * (1024 * 1024 + 1)]
+            with self.assertRaisesRegex(BridgeContractError, "size limit"):
+                stream_agent_events(process, agent, lambda _: None)
 
     def test_codex_page_open_event_satisfies_exact_full_text_attestation(self):
         # Shape observed from bundled Codex CLI 0.159.2, including the action

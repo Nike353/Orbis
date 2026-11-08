@@ -12,6 +12,46 @@ export function canonical(value) {
 }
 export const equal = (a, b) => canonical(a) === canonical(b);
 export const hash = (value) => createHash('sha256').update(canonical(value)).digest('hex');
+export const hashBytes = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const MAX_ORIGINAL = 25 * 1024 * 1024;
+export function sealOriginal(bytes, key, context) {
+  if (!bytes.length || bytes.length > MAX_ORIGINAL)
+    throw new Error('Invalid original size');
+  const iv = randomBytes(12),
+    cipher = createCipheriv('aes-256-gcm', key, iv);
+  cipher.setAAD(Buffer.from(context));
+  const body = Buffer.concat([cipher.update(bytes), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), body]);
+}
+export function unsealOriginal(bytes, key, context, sha, size) {
+  if (bytes.length < 29 || bytes.length > MAX_ORIGINAL + 28)
+    throw new Error('Invalid encrypted original');
+  const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
+  decipher.setAAD(Buffer.from(context));
+  decipher.setAuthTag(bytes.subarray(12, 28));
+  const content = Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]);
+  if (hashBytes(content) !== sha || content.length !== size)
+    throw new Error('Original failed its hash or size check; no file was replaced');
+  return content;
+}
+
+export function normalizedSnapshot(snapshot) {
+  if (![1, 2].includes(snapshot?.version) || !snapshot.graphs) return snapshot;
+  return {
+    version: 2,
+    graphs: Object.fromEntries(
+      Object.entries(snapshot.graphs).map(([id, graph]) => [
+        id,
+        {
+          ...graph,
+          documents: graph.documents ?? {},
+          annotations: graph.annotations ?? {},
+        },
+      ]),
+    ),
+  };
+}
+export const snapshotsEqual = (a, b) => equal(normalizedSnapshot(a), normalizedSnapshot(b));
 export function seal(value, key, context) {
   const iv = randomBytes(12),
     cipher = createCipheriv('aes-256-gcm', key, iv);
@@ -46,7 +86,7 @@ export function mergeSnapshots(base, variants, resolutions = {}) {
     const collidingRecord =
       before === undefined &&
       path.length === 4 &&
-      ['nodes', 'edges', 'sessions'].includes(path[2]);
+      ['nodes', 'edges', 'sessions', 'documents', 'annotations'].includes(path[2]);
     if (
       !collidingRecord &&
       changed.every((c) => object(c.value)) &&
@@ -119,10 +159,13 @@ export function mergeCommits(commits, resolutions = {}) {
     throw new Error(
       'Concurrent merge histories need recovery. All versions are preserved.',
     );
-  const base = bases.length ? map.get(bases[0]).snapshot : undefined;
+  const normalize = commits.some((c) => c.snapshot?.version === 2)
+    ? normalizedSnapshot
+    : (value) => value;
+  const base = bases.length ? normalize(map.get(bases[0]).snapshot) : undefined;
   const merged = mergeSnapshots(
     base,
-    heads.map((c) => ({ id: c.id, value: c.snapshot })),
+    heads.map((c) => ({ id: c.id, value: normalize(c.snapshot) })),
     resolutions,
   );
   return { ...merged, heads: heads.map((c) => c.id) };

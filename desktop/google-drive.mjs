@@ -147,6 +147,17 @@ export class Drive {
     );
     if (!response.ok) {
       if (response.status === 401) this.access = null;
+      if (response.status === 403) {
+        const failure = await response.json().catch(() => ({}));
+        if (failure.error?.errors?.some((item) => item.reason === 'storageQuotaExceeded'))
+          throw new Error(
+            'Google Drive storage is full. Free space in your Drive, then retry sync. Local originals and edits are preserved.',
+          );
+      }
+      if (response.status === 429)
+        throw new Error(
+          'Google Drive is limiting requests. Automatic sync will retry with backoff; local edits are preserved.',
+        );
       throw new Error(
         `Drive sync failed (${response.status}). Your local changes are safe; reconnect if access was revoked.`,
       );

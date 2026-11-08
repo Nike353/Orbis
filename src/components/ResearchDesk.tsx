@@ -1,4 +1,4 @@
-import { readPreference } from '../services/preferences';
+import { readPreference, writePreference } from '../services/preferences';
 import { AgentModelSettings } from './AgentModelSettings';
 import { useAgentSettings } from '../store/agentSettings';
 import { MarkdownNotes, MarkdownView } from './MarkdownNotes';
@@ -21,8 +21,11 @@ import {
   sessionMarkdown,
   type ResearchSession,
   type ResearchTurn,
+  type ResearchCitation,
 } from '../services/research';
+import type { SelectedPassage } from '../services/documents';
 import { downloadText } from '../services/exportMarkdown';
+import { ResearchProposal } from './ResearchProposal';
 
 const PRESETS = [
   'Input',
@@ -34,25 +37,44 @@ const PRESETS = [
   'Adaptation mechanism',
 ];
 
-export function ResearchDesk({ comparison }: { comparison: boolean }) {
+export function ResearchDesk({
+  comparison,
+  paperId,
+  selectedPassage,
+  onCitation,
+  onDraftFlush,
+  draftRequest,
+}: {
+  comparison: boolean;
+  paperId?: string;
+  selectedPassage?: SelectedPassage | null;
+  onCitation?: (citation: ResearchCitation) => void;
+  onDraftFlush?: (flush: () => Promise<void>) => void;
+  draftRequest?: { text: string; nonce: number };
+}) {
   const graph = useWorkspaceStore((s) => s.graph)!;
   const dirty = useWorkspaceStore((s) => s.dirty);
   const reload = useWorkspaceStore((s) => s.refresh);
   const researchScope = useWorkspaceStore((s) => s.researchScope);
   const nonce = useWorkspaceStore((s) => s.researchNonce);
+  const researchSessionId = useWorkspaceStore((s) => s.researchSessionId);
   const addToast = useWorkspaceStore((s) => s.addToast);
   const select = useWorkspaceStore((s) => s.select);
   const setTab = useWorkspaceStore((s) => s.setTab);
+  const openPaper = useWorkspaceStore((s) => s.openPaper);
   const [sessions, setSessions] = useState<ResearchSession[]>([]);
   const [current, setCurrent] = useState<ResearchSession | null>(null);
-  const [scope, setScope] = useState<string[]>(researchScope);
+  const [scope, setScope] = useState<string[]>(paperId ? [paperId] : researchScope);
   const [criteria, setCriteria] = useState(PRESETS.slice(0, 4));
   const [custom, setCustom] = useState('');
   const [query, setQuery] = useState('');
   const [question, setQuestion] = useState('');
   const [health, setHealth] = useState<BridgeHealth | null>(null);
   const [agent, setAgent] = useState('');
-  const { choice: settings } = useAgentSettings(agent);
+  const { choice: settings } = useAgentSettings(
+    agent,
+    health?.agents.find((item) => item.id === agent),
+  );
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
   const [archived, setArchived] = useState(false);
@@ -62,6 +84,10 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
   );
   const [noteTarget, setNoteTarget] = useState(researchScope[0] ?? '');
   const currentId = useRef<string | null>(null);
+  const draftWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const appliedDraftRequest = useRef<number>();
+  const [draftReady, setDraftReady] = useState(!paperId);
+  const [activeSelection, setActiveSelection] = useState<SelectedPassage | null>(null);
   const labels = useMemo(() => new Map(graph.nodes.map((n) => [n.id, n.label])), [graph]);
   const running = current?.turns.some((t) => t.status === 'running') ?? false;
   const candidates = graph.nodes.filter(
@@ -82,6 +108,10 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     if (currentId.current === id) setCurrent(session);
     return session;
   }, []);
+  useEffect(() => {
+    if (currentId.current)
+      void refreshCurrent(currentId.current).catch((e: Error) => setError(e.message));
+  }, [graph.meta.revision, refreshCurrent]);
 
   useEffect(() => {
     void refreshList().catch((e) => setError(String(e.message)));
@@ -96,6 +126,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     });
   }, [refreshList]);
   useEffect(() => {
+    if (paperId) return;
     currentId.current = null;
     setCurrent(null);
     setScope(
@@ -105,9 +136,104 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     );
     setQuestion('');
     setError('');
+    if (researchSessionId) {
+      currentId.current = researchSessionId;
+      void refreshCurrent(researchSessionId)
+        .then((session) => {
+          setScope(session.scope_ids);
+          setNoteTarget(session.scope_ids[0] ?? '');
+        })
+        .catch((failure: Error) => setError(failure.message));
+    }
     // Opening an inspector's Discuss action starts a fresh, explicitly scoped conversation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nonce]);
+  }, [nonce, paperId, researchSessionId]);
+  useEffect(() => {
+    if (!paperId) return;
+    let stopped = false;
+    setScope([paperId]);
+    setNoteTarget(paperId);
+    void (async () => {
+      try {
+        const [draft, list] = await Promise.all([
+          researchRequest<{ question: string; selection: SelectedPassage | null }>(
+            `/drafts?node_id=${encodeURIComponent(paperId)}`,
+          ),
+          researchRequest<{ sessions: ResearchSession[] }>(),
+        ]);
+        if (stopped) return;
+        setQuestion(draft.question);
+        setActiveSelection(draft.selection);
+        setSessions(list.sessions);
+        const previous = list.sessions.find(
+          (session) =>
+            !session.archived &&
+            !session.criteria.length &&
+            session.scope_ids[0] === paperId,
+        );
+        if (previous) {
+          currentId.current = previous.id;
+          const session = await refreshCurrent(previous.id);
+          if (!stopped) setScope(session.scope_ids);
+        }
+        if (!stopped) setDraftReady(true);
+      } catch (failure) {
+        if (!stopped) setError((failure as Error).message);
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [paperId, refreshCurrent]);
+  useEffect(() => {
+    if (!selectedPassage) return;
+    setActiveSelection(selectedPassage);
+    setQuestion((value) => value || 'Explain this selected passage.');
+  }, [selectedPassage]);
+  useEffect(() => {
+    if (!draftRequest || !draftReady || appliedDraftRequest.current === draftRequest.nonce)
+      return;
+    appliedDraftRequest.current = draftRequest.nonce;
+    setQuestion((previous) => {
+      const next = previous.trim()
+        ? `${previous}\n\n${draftRequest.text}`
+        : draftRequest.text;
+      if (next.length > 8000) {
+        setError('Send or shorten your current draft before requesting a new summary.');
+        return previous;
+      }
+      return next;
+    });
+  }, [draftRequest, draftReady]);
+  const flushDraft = useCallback(async () => {
+    if (!paperId || !draftReady) return;
+    const selection = activeSelection
+      ? {
+          document_id: activeSelection.document_id,
+          page: activeSelection.page,
+          text: activeSelection.text,
+        }
+      : null;
+    draftWrites.current = draftWrites.current
+      .catch(() => {})
+      .then(() =>
+        researchRequest(`/drafts?node_id=${encodeURIComponent(paperId)}`, {
+          question,
+          selection,
+        }),
+      );
+    await draftWrites.current;
+  }, [activeSelection, draftReady, paperId, question]);
+  useEffect(() => {
+    onDraftFlush?.(flushDraft);
+    if (!paperId || !draftReady) return;
+    const timer = setTimeout(() => {
+      void flushDraft().catch((failure: Error) =>
+        setError(`Draft could not be saved: ${failure.message}`),
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [draftReady, flushDraft, onDraftFlush, paperId]);
   useEffect(() => {
     if (!running || !current?.id) return;
     const id = current.id;
@@ -132,8 +258,9 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
   function newConversation() {
     currentId.current = null;
     setCurrent(null);
-    setScope([]);
+    setScope(paperId ? [paperId] : []);
     setQuestion('');
+    setActiveSelection(null);
     setError('');
     setDeleteConfirm(false);
   }
@@ -183,8 +310,18 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
         agent,
         settings,
         base_revision: graph.meta.revision,
+        ...(activeSelection
+          ? {
+              selection: {
+                document_id: activeSelection.document_id,
+                page: activeSelection.page,
+                text: activeSelection.text,
+              },
+            }
+          : {}),
       });
       setQuestion('');
+      setActiveSelection(null);
       await refreshCurrent(session.id);
     } catch (e) {
       setError((e as Error).message);
@@ -248,9 +385,15 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
     select({ kind: 'node', id });
     setTab(null);
   }
+  function cite(citation: ResearchCitation) {
+    if (onCitation) onCitation(citation);
+    else if (citation.document_id && citation.page)
+      openPaper(citation.node_id, citation.document_id, citation.page);
+    else inspect(citation.node_id);
+  }
 
   return (
-    <div className="research-desk">
+    <div className={`research-desk${paperId ? ' paper-discussion' : ''}`}>
       <aside className="conversation-list" aria-label="Saved conversations">
         <button className="button primary full" onClick={newConversation}>
           <Plus size={16} /> New {comparison ? 'comparison' : 'conversation'}
@@ -266,7 +409,10 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
         <div className="session-items">
           {sessions
             .filter(
-              (s) => s.archived === archived && Boolean(s.criteria.length) === comparison,
+              (s) =>
+                s.archived === archived &&
+                Boolean(s.criteria.length) === comparison &&
+                (!paperId || s.scope_ids[0] === paperId),
             )
             .map((s) => (
               <button
@@ -293,7 +439,12 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
             <span className="eyebrow">Your research workspace</span>
             <h1>
               {comparison ? <Table2 size={25} /> : <MessagesSquare size={25} />}
-              {current?.title ?? (comparison ? 'Compare papers' : 'Discuss your library')}
+              {current?.title ??
+                (comparison
+                  ? 'Compare papers'
+                  : paperId
+                    ? 'Discuss this paper'
+                    : 'Discuss your library')}
             </h1>
           </div>
           {current && (
@@ -346,53 +497,65 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                 ? 'Choose 2–20 papers and the questions that matter to your research. Each cell keeps its evidence.'
                 : 'Ask about a paper, a method, a cluster, or the relationships across your library. Graph edits always come back for review.'}
             </p>
-            <label className="field-label">
-              {comparison ? 'Find papers to compare' : 'Choose context'}
-              <input
-                type="search"
-                placeholder="Search your library"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
             <div className="scope-chips">
               {scope.map((id) => (
-                <button key={id} onClick={() => setScope(scope.filter((s) => s !== id))}>
-                  {labels.get(id) ?? id} ×
+                <button
+                  key={id}
+                  disabled={id === paperId}
+                  onClick={() => setScope(scope.filter((s) => s !== id))}
+                >
+                  {labels.get(id) ?? id}
+                  {id === paperId ? ' · selected paper' : ' ×'}
                 </button>
               ))}
             </div>
-            <div className="scope-picker" aria-label="Context records">
-              {matches.slice(0, 150).map((n) => (
-                <label key={n.id}>
-                  <input
-                    type="checkbox"
-                    checked={scope.includes(n.id)}
-                    disabled={!scope.includes(n.id) && scope.length >= 20}
-                    onChange={(e) =>
-                      setScope(
-                        e.target.checked
-                          ? [...scope, n.id]
-                          : scope.filter((id) => id !== n.id),
-                      )
-                    }
-                  />
-                  <span>
-                    <strong>{n.label}</strong>
-                    <small>
-                      {n.type}
-                      {n.paper ? ` · ${n.paper.year ?? 'Undated'}` : ''}
-                    </small>
-                  </span>
-                </label>
-              ))}
-              {!matches.length && (
-                <p>No matching records. Add a paper to start your library.</p>
-              )}
-              {matches.length > 150 && (
-                <p>Search to narrow down {matches.length} records.</p>
-              )}
-            </div>
+            <details className="research-context-picker" open={!paperId}>
+              <summary>
+                {paperId ? 'Add other library context' : 'Choose library context'}
+              </summary>
+              <label className="field-label">
+                {comparison ? 'Find papers to compare' : 'Choose context'}
+                <input
+                  type="search"
+                  placeholder="Search your library"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <div className="scope-picker" aria-label="Context records">
+                {matches.slice(0, 150).map((n) => (
+                  <label key={n.id}>
+                    <input
+                      type="checkbox"
+                      checked={scope.includes(n.id)}
+                      disabled={
+                        n.id === paperId || (!scope.includes(n.id) && scope.length >= 20)
+                      }
+                      onChange={(e) =>
+                        setScope(
+                          e.target.checked
+                            ? [...scope, n.id]
+                            : scope.filter((id) => id !== n.id),
+                        )
+                      }
+                    />
+                    <span>
+                      <strong>{n.label}</strong>
+                      <small>
+                        {n.type}
+                        {n.paper ? ` · ${n.paper.year ?? 'Undated'}` : ''}
+                      </small>
+                    </span>
+                  </label>
+                ))}
+                {!matches.length && (
+                  <p>No matching records. Add a paper to start your library.</p>
+                )}
+                {matches.length > 150 && (
+                  <p>Search to narrow down {matches.length} records.</p>
+                )}
+              </div>
+            </details>
             {comparison && (
               <section className="criteria-picker">
                 <h2>Comparison criteria</h2>
@@ -475,8 +638,11 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                     </div>
                     {turn.status === 'running' && (
                       <div className="running-answer">
-                        <span className="loading-dot" /> Reading your library context… You
-                        can leave this view and come back.
+                        <span className="loading-dot" />{' '}
+                        {turn.phase === 'retrieving'
+                          ? 'Retrieving source passages…'
+                          : 'Preparing your answer…'}{' '}
+                        You can leave this view and come back.
                         <button
                           className="button secondary"
                           onClick={() =>
@@ -489,10 +655,38 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                         </button>
                       </div>
                     )}
-                    {turn.error && <p className="research-warning">{turn.error}</p>}
+                    {turn.error && (
+                      <div className="research-warning">
+                        <p>{turn.error}</p>
+                        <button
+                          className="button secondary"
+                          disabled={pending || running}
+                          onClick={() => {
+                            setQuestion(turn.question);
+                            setActiveSelection(turn.selection ?? null);
+                          }}
+                        >
+                          Retry this question
+                        </button>
+                      </div>
+                    )}
                     {turn.result && (
                       <>
+                        <p
+                          className={`source-mode source-mode-${turn.result.source_mode ?? 'notes_only'}`}
+                        >
+                          {turn.result.source_mode === 'originals'
+                            ? 'Original-source excerpts'
+                            : turn.result.source_mode === 'mixed'
+                              ? 'Original excerpts and library notes'
+                              : 'Notes-only answer · verify against the original'}
+                        </p>
                         <MarkdownView text={turn.result.answer} />
+                        {turn.result.quality_warnings?.map((warning) => (
+                          <p className="research-warning" key={warning}>
+                            {warning}
+                          </p>
+                        ))}
                         {turn.result.cells.length > 0 && (
                           <>
                             <div className="comparison-scroll">
@@ -530,6 +724,20 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                                             <details>
                                               <summary>Evidence</summary>
                                               <p>{cell?.evidence}</p>
+                                              {cell && (
+                                                <button
+                                                  onClick={() =>
+                                                    cite({
+                                                      ...cell,
+                                                      node_id: cell.paper_id,
+                                                    })
+                                                  }
+                                                >
+                                                  {cell.page
+                                                    ? `Open page ${cell.page} · ${cell.section}`
+                                                    : 'Library notes · verify against original'}
+                                                </button>
+                                              )}
                                             </details>
                                           </td>
                                         );
@@ -559,8 +767,11 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                           </summary>
                           {turn.result.citations.map((c, i) => (
                             <p key={i}>
-                              <button onClick={() => inspect(c.node_id)}>
+                              <button onClick={() => cite(c)}>
                                 {labels.get(c.node_id) ?? c.node_id}
+                                {c.page
+                                  ? ` · page ${c.page} · ${c.section}`
+                                  : ' · library notes'}
                               </button>{' '}
                               — {c.evidence}
                             </p>
@@ -572,8 +783,9 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                             {turn.coverage.records_omitted > 0
                               ? `${turn.coverage.records_omitted} records omitted; narrow the scope for details.`
                               : ''}{' '}
-                            Answers use your stored library context, without a new full-text
-                            retrieval.
+                            {turn.coverage.original_passages ?? 0} original-source passages.
+                            Citation anchors and quotes are checked; answer meaning still
+                            needs your judgment.
                           </p>
                         </details>
                         {(turn.preview?.length ?? 0) > 0 && (
@@ -583,24 +795,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                               <span className="status-pill">{turn.proposal_status}</span>
                             </h3>
                             {turn.preview!.map((p, i) => (
-                              <div className="change-preview" key={i}>
-                                <strong>
-                                  {p.action} ·{' '}
-                                  {'label' in p.after ? p.after.label : p.after.relation}
-                                </strong>
-                                <p>{p.reason}</p>
-                                <details>
-                                  <summary>Before and after</summary>
-                                  <div className="change-diff">
-                                    <pre>
-                                      {p.before
-                                        ? JSON.stringify(p.before, null, 2)
-                                        : 'New record'}
-                                    </pre>
-                                    <pre>{JSON.stringify(p.after, null, 2)}</pre>
-                                  </div>
-                                </details>
-                              </div>
+                              <ResearchProposal key={i} preview={p} labels={labels} />
                             ))}
                             {turn.proposal_status === 'pending' && (
                               <div className="research-actions">
@@ -610,7 +805,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                                     pending ||
                                     running ||
                                     dirty ||
-                                    turn.base_revision !== graph.meta.revision
+                                    (turn.proposal_stale ?? !turn.base_fingerprint)
                                   }
                                   onClick={() => void decide(turn, 'apply')}
                                 >
@@ -623,7 +818,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                                 >
                                   Reject changes
                                 </button>
-                                {turn.base_revision !== graph.meta.revision && (
+                                {(turn.proposal_stale ?? !turn.base_fingerprint) && (
                                   <p>
                                     Graph changed. Ask for a fresh proposal before
                                     accepting.
@@ -720,6 +915,15 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
           </p>
         )}
         <section className="research-composer">
+          {activeSelection && (
+            <div className="selected-passage">
+              <strong>Selected text · page {activeSelection.page}</strong>
+              <p>{activeSelection.text}</p>
+              <button className="button secondary" onClick={() => setActiveSelection(null)}>
+                Clear selection
+              </button>
+            </div>
+          )}
           <label className="field-label">
             {comparison ? 'Comparison instructions or follow-up' : 'Your question'}
             <textarea
@@ -748,7 +952,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
                 disabled={pending || running}
                 onChange={(e) => {
                   setAgent(e.target.value);
-                  window.localStorage.setItem('orbis.agent', e.target.value);
+                  writePreference('orbis.agent', e.target.value);
                 }}
               >
                 {!agent && <option value="">Choose an agent</option>}
@@ -787,7 +991,7 @@ export function ResearchDesk({ comparison }: { comparison: boolean }) {
           </div>
           <p className="research-caption">
             Your selected library context is sent through this CLI's configured provider.
-            One run at a time · 10-minute limit · conversations stay local.{' '}
+            One run at a time · 10-minute limit · conversations are saved in your library.{' '}
             {current?.archived ? 'Restore this conversation to continue.' : ''}
             {!health?.agents.some((a) => a.available)
               ? ' Install and sign in to Codex or Claude Code, then restart the server.'

@@ -11,14 +11,20 @@ import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 
 try:
     from research import ResearchStore, ResearchError, paper_note
     from branding import env_setting
+    from documents import DocumentStore, DocumentError, MAX_FILE_BYTES
+    from activity import ActivityStore
+    from workspace import ensure_library_writable
 except ModuleNotFoundError:
     from tools.research import ResearchStore, ResearchError, paper_note
     from tools.branding import env_setting
+    from tools.documents import DocumentStore, DocumentError, MAX_FILE_BYTES
+    from tools.activity import ActivityStore
+    from tools.workspace import ensure_library_writable
 
 try:
     from build_data_js import validate
@@ -38,6 +44,8 @@ try:
         resolve_agent,
         normalize_settings,
         stream_agent_events,
+        agent_environment,
+        stop_agent,
         utc_now,
         validate_full_text_source,
     )
@@ -59,6 +67,8 @@ except ModuleNotFoundError:  # Imported as tools.serve by tests.
         resolve_agent,
         normalize_settings,
         stream_agent_events,
+        agent_environment,
+        stop_agent,
         utc_now,
         validate_full_text_source,
     )
@@ -83,7 +93,33 @@ graph_catalog = None
 active_graph_id = "main"
 desktop_store = None
 queue_store = QueueStateStore()
-research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
+document_store = DocumentStore(ROOT, graph_lock)
+activity_store = ActivityStore(document_store)
+research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT, document_store)
+
+
+def activity():
+    jobs = [{**job, "kind": "document"} for job in document_store.jobs()] + activity_store.read()
+    with research_store.lock:
+        for session in research_store.read()["sessions"]:
+            for turn in session["turns"]:
+                jobs.append({
+                    "id": turn["id"], "kind": "comparison" if session["criteria"] else "discussion",
+                    "title": turn["question"], "status": turn["status"],
+                    "phase": turn.get("phase", turn["status"]),
+                    "created_at": turn["created_at"], "session_id": session["id"],
+                    "scope_ids": session["scope_ids"], "error": turn.get("error", ""),
+                    "agent": turn["agent"], "settings": turn.get("settings"),
+                })
+    if queue_store.batch_path.exists():
+        for identifier, record in queue_store.payload()["records"].items():
+            if record["status"] != "queued":
+                jobs.append({
+                    "id": identifier, "kind": "import", "title": record.get("title") or identifier,
+                    "status": record["status"], "created_at": record.get("started_at") or "",
+                    "error": record.get("reason") or "", "node_id": record.get("graph_node_id"),
+                })
+    return sorted(jobs, key=lambda job: job.get("created_at", ""), reverse=True)[:500]
 
 
 def atomic_write_graph(data):
@@ -98,7 +134,7 @@ def sanitize_line(text):
     ).strip()
 
 
-def set_active_run(proc, cancel_event, arxiv_id, agent_id):
+def set_active_run(proc, cancel_event, arxiv_id, agent_id, job_id=None):
     global active_run
     with active_run_lock:
         active_run = {
@@ -106,23 +142,27 @@ def set_active_run(proc, cancel_event, arxiv_id, agent_id):
             "cancel_event": cancel_event,
             "arxiv_id": arxiv_id,
             "agent_id": agent_id,
+            "job_id": job_id,
         }
 
 
-def clear_active_run(proc):
+def clear_active_run(proc, job_id=None):
     global active_run
     with active_run_lock:
-        if active_run and active_run["proc"] is proc:
+        if active_run and active_run["proc"] is proc and (job_id is None or active_run.get("job_id") == job_id):
             active_run = None
 
 
-def cancel_active_run():
+def cancel_active_run(expected=None):
     with active_run_lock:
         current = active_run
         if not current:
             return False
+        if expected and expected not in (current.get("job_id"), current["arxiv_id"]):
+            return False
         current["cancel_event"].set()
-        current["proc"].kill()
+        if current["proc"] is not None:
+            stop_agent(current["proc"])
         queue_finish(
             current["arxiv_id"],
             "cancelled",
@@ -239,6 +279,12 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/desktop/documents"):
+            self.desktop_documents(parsed)
+            return
+        if parsed.path.startswith(("/api/documents", "/api/annotations")) or parsed.path == "/api/activity":
+            self.documents_get(parsed)
+            return
         if parsed.path == "/api/desktop/snapshot":
             if not os.environ.get("ORBIS_DESKTOP_TOKEN") or not self.same_origin_ok() or not desktop_store:
                 self.send_json(403, {"error": "Desktop session required"})
@@ -269,10 +315,10 @@ class Handler(SimpleHTTPRequestHandler):
                         "turn_count": len(s["turns"]),
                         "running": any(t["status"] == "running" for t in s["turns"])}
                         for s in state["sessions"]]})
+                elif parsed.path == "/api/research/drafts":
+                    self.send_json(200, research_store.draft(parse_qs(parsed.query).get("node_id", [""])[0]))
                 elif parsed.path.startswith("/api/research/"):
-                    with research_store.lock:
-                        session = research_store.find(research_store.read(), parsed.path.split("/")[-1])
-                    self.send_json(200, session)
+                    self.send_json(200, research_store.view(parsed.path.split("/")[-1]))
                 elif parsed.path == "/api/notes":
                     node_id = parse_qs(parsed.query).get("id", [""])[0]
                     node = next((n for n in research_store.graph()["nodes"] if n["id"] == node_id), None)
@@ -383,6 +429,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         with graph_lock:
+            try:
+                ensure_library_writable(ROOT)
+            except ValueError as exc:
+                self.send_json(409, {"error": str(exc)})
+                return
             if research_store.journal.exists():
                 self.send_json(409, {"error": "A graph transaction needs recovery. Restart the server before saving."})
                 return
@@ -415,13 +466,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_json(200, graph)
 
     def do_DELETE(self):
-        if self.path != "/api/insert":
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/insert":
             self.send_json(404, {"error": "unknown endpoint"})
             return
         if not self.same_origin_ok():
             self.send_json(403, {"error": "cross-origin request rejected"})
             return
-        cancelled = cancel_active_run()
+        cancelled = cancel_active_run(parse_qs(parsed.query).get("job_id", [None])[0])
         self.send_json(
             202 if cancelled else 409,
             {"ok": cancelled, "message": (
@@ -430,6 +482,13 @@ class Handler(SimpleHTTPRequestHandler):
         )
 
     def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/desktop/documents"):
+            self.desktop_documents(parsed, write=True)
+            return
+        if parsed.path.startswith(("/api/documents", "/api/annotations", "/api/activity")):
+            self.documents_post(parsed)
+            return
         if self.path == "/api/desktop/apply":
             if not os.environ.get("ORBIS_DESKTOP_TOKEN") or not self.same_origin_ok() or not desktop_store:
                 self.send_json(403, {"error": "Desktop session required"})
@@ -539,6 +598,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         try:
+            ensure_library_writable(ROOT)
             if is_batch_record:
                 queue_store.start(arxiv_id)
             self.run_insert(
@@ -550,12 +610,129 @@ class Handler(SimpleHTTPRequestHandler):
                 agent["label"],
                 settings,
             )
-        except BridgeContractError as exc:
+        except (BridgeContractError, ValueError) as exc:
             queue_finish(arxiv_id if is_batch_record else None,
                          "failed", reason=str(exc))
             self.send_json(500, {"error": str(exc)})
         finally:
             insert_lock.release()
+
+    def documents_get(self, parsed):
+        if not self.same_origin_ok():
+            self.send_json(403, {"error": "cross-origin request rejected"})
+            return
+        query = parse_qs(parsed.query)
+        parts = parsed.path.strip("/").split("/")
+        try:
+            if parts == ["api", "documents"]:
+                value = document_store.listing(query.get("node_id", [""])[0])
+            elif parts == ["api", "activity"]:
+                value = {"jobs": activity()}
+            elif len(parts) == 4 and parts[:2] == ["api", "annotations"] and parts[3] == "draft":
+                value = document_store.annotation_draft(parts[2])
+            elif len(parts) == 3 and parts[:2] == ["api", "documents"]:
+                value = document_store.view(document_store.document(parts[2]))
+            elif len(parts) == 4 and parts[:2] == ["api", "documents"]:
+                record = document_store.document(parts[2])
+                if parts[3] == "original":
+                    content = document_store.blob(record["sha256"])
+                    self.send_response(200)
+                    self.send_header("Content-Type", record["media_type"])
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "private, no-store")
+                    self.send_header("Content-Disposition",
+                                     "inline; filename*=UTF-8''" + quote(record["filename"], safe=""))
+                    self.end_headers()
+                    self.wfile.write(content)
+                    return
+                if parts[3] != "pages":
+                    raise DocumentError("Unknown document endpoint.", 404)
+                value = document_store.pages(record["id"], query.get("query", [""])[0][:1000])
+            else:
+                raise DocumentError("Unknown document endpoint.", 404)
+            self.send_json(200, value)
+        except (DocumentError, OSError, ValueError) as exc:
+            self.send_json(getattr(exc, "status", 500), {"error": str(exc)})
+
+    def desktop_documents(self, parsed, write=False):
+        if not os.environ.get("ORBIS_DESKTOP_TOKEN") or not self.same_origin_ok() or not desktop_store:
+            self.send_json(403, {"error": "Desktop session required"})
+            return
+        parts = parsed.path.strip("/").split("/")
+        try:
+            if len(parts) == 3 and not write:
+                self.send_json(200, desktop_store.availability())
+            elif len(parts) == 6 and parts[5] == "blob":
+                if write:
+                    length = int(self.headers.get("Content-Length", 0))
+                    if not 0 < length <= MAX_FILE_BYTES:
+                        raise DocumentError("Original exceeds the transfer size limit.", 413)
+                    self.send_json(200, desktop_store.blob(parts[3], parts[4], self.rfile.read(length)))
+                else:
+                    content = desktop_store.blob(parts[3], parts[4])
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(len(content)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(content)
+            elif len(parts) == 6 and parts[5] == "state" and write:
+                self.send_json(200, desktop_store.transfer(parts[3], parts[4], self.read_json_body(4096)))
+            else:
+                raise DocumentError("Unknown original transfer endpoint.", 404)
+        except (ValueError, OSError, TypeError, KeyError) as exc:
+            self.send_json(getattr(exc, "status", 409), {"error": str(exc)})
+
+    def documents_post(self, parsed):
+        if not self.same_origin_ok():
+            self.send_json(403, {"error": "cross-origin request rejected"})
+            return
+        query = parse_qs(parsed.query)
+        parts = parsed.path.strip("/").split("/")
+        try:
+            if parts == ["api", "documents", "attach"]:
+                try:
+                    length = int(self.headers.get("Content-Length", 0))
+                except ValueError:
+                    length = 0
+                if not 0 < length <= MAX_FILE_BYTES:
+                    raise DocumentError("Choose an original file up to 25 MB.", 413)
+                value = document_store.attach(
+                    query.get("node_id", [""])[0], self.rfile.read(length),
+                    query.get("filename", ["paper.pdf"])[0],
+                    query.get("source_url", [""])[0],
+                    self.headers.get("Content-Type", "application/pdf").split(";")[0])
+            else:
+                body = self.read_json_body(64 * 1024)
+                if not isinstance(body, dict):
+                    raise DocumentError("Invalid document request.")
+                if parts == ["api", "documents", "fetch"]:
+                    value = document_store.fetch(body)
+                elif parts == ["api", "annotations"]:
+                    value = document_store.annotate(body)
+                elif len(parts) == 3 and parts[:2] == ["api", "annotations"]:
+                    value = document_store.edit_annotation(parts[2], body)
+                elif len(parts) == 4 and parts[:2] == ["api", "annotations"] and parts[3] == "draft":
+                    value = document_store.annotation_draft(parts[2], body)
+                elif len(parts) == 4 and parts[:2] == ["api", "documents"] and parts[3] == "local":
+                    record = document_store.document(parts[2])
+                    if body.get("action") == "remove_download":
+                        if not os.environ.get("ORBIS_DESKTOP_TOKEN"):
+                            raise DocumentError("Use the desktop app to verify Drive before removing a download.", 403)
+                        value = document_store.remove_local(record["id"])
+                    elif type(body.get("keep_offline")) is bool:
+                        value = document_store.local_state(record["sha256"], keep_offline=body["keep_offline"])
+                    elif type(body.get("last_page")) is int and 1 <= body["last_page"] <= 1000:
+                        value = document_store.local_state(record["sha256"], last_page=body["last_page"])
+                    else:
+                        raise DocumentError("Choose Keep offline or Remove download.")
+                elif len(parts) == 4 and parts[:2] == ["api", "activity"] and parts[3] == "cancel":
+                    value = document_store.cancel(parts[2])
+                else:
+                    raise DocumentError("Unknown document action.", 404)
+            self.send_json(200, value)
+        except (DocumentError, OSError, ValueError) as exc:
+            self.send_json(getattr(exc, "status", 400), {"error": str(exc)})
 
     def research_post(self):
         if not self.same_origin_ok():
@@ -565,10 +742,13 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(body, dict):
             self.send_json(400, {"error": "invalid JSON body"})
             return
-        parts = self.path.strip("/").split("/")
+        parsed = urlparse(self.path)
+        parts = parsed.path.strip("/").split("/")
         try:
             if parts == ["api", "research"]:
                 value = research_store.create(body)
+            elif parts == ["api", "research", "drafts"]:
+                value = research_store.draft(parse_qs(parsed.query).get("node_id", [""])[0], body)
             elif len(parts) == 4 and parts[3] == "turns":
                 value = research_store.start(parts[2], body)
             elif len(parts) == 3:
@@ -586,6 +766,19 @@ class Handler(SimpleHTTPRequestHandler):
     def run_insert(
             self, record, hint, queue_arxiv_id, relevance_policy,
             agent_id, agent_label, settings=None):
+        job_id = activity_store.start(record, hint, agent_id, settings) if not queue_arxiv_id else None
+        try:
+            return self._run_insert(record, hint, queue_arxiv_id, relevance_policy,
+                                    agent_id, agent_label, settings, job_id)
+        except BaseException as exc:
+            activity_store.update(job_id, status="failed", phase="failed", error=str(exc)[:2000],
+                                  finished_at=utc_now())
+            raise
+        finally:
+            clear_active_run(None, job_id)
+
+    def _run_insert(self, record, hint, queue_arxiv_id, relevance_policy,
+                    agent_id, agent_label, settings, job_id):
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
         self.send_header("Cache-Control", "no-store")
@@ -595,8 +788,27 @@ class Handler(SimpleHTTPRequestHandler):
         cancel_requested = threading.Event()
         timed_out = threading.Event()
         url = record["canonical_url"]
+        set_active_run(None, cancel_requested, queue_arxiv_id, agent_id, job_id)
+
+        def finish(status, result=None, reason=None, graph_node_id=None):
+            queue_finish(queue_arxiv_id, status, result, reason, graph_node_id)
+            activity_store.update(job_id, status=status, phase=status,
+                                  error=reason if status in ("failed", "cancelled") else "",
+                                  node_id=graph_node_id, finished_at=utc_now(),
+                                  summary=(result or {}).get("summary", reason))
 
         def emit(value):
+            if value["type"] == "start":
+                activity_store.update(job_id, phase="fetching")
+                value["job_id"] = job_id
+            elif value["type"] == "event":
+                phase = "reading"
+                if value.get("kind") == "tool":
+                    name = str(value.get("name", "")).lower()
+                    phase = ("fetching" if any(word in name for word in ("fetch", "search", "open page"))
+                             else "connecting" if any(word in name for word in ("edit", "write"))
+                             else "reading")
+                activity_store.update(job_id, phase=phase)
             if client_gone.is_set():
                 return
             try:
@@ -616,9 +828,7 @@ class Handler(SimpleHTTPRequestHandler):
         duplicate_node = graph_duplicate(ROOT, record)
         if duplicate_node:
             reason = f"Already represented by {duplicate_node}."
-            queue_finish(
-                queue_arxiv_id, "duplicate", reason=reason,
-                graph_node_id=duplicate_node)
+            finish("duplicate", reason=reason, graph_node_id=duplicate_node)
             emit({
                 "type": "done",
                 "ok": True,
@@ -633,25 +843,33 @@ class Handler(SimpleHTTPRequestHandler):
 
         self.log_message("%s insert started: %s", agent_label, url)
         with IsolatedInsertion(ROOT) as insertion:
-            prompt = build_prompt(record, hint, relevance_policy)
-            command = build_agent_command(
-                agent_id, prompt, insertion.workspace, MAX_TURNS, settings=settings)
             try:
+                prompt = build_prompt(record, hint, relevance_policy)
+                command = build_agent_command(
+                    agent_id, prompt, insertion.workspace, MAX_TURNS, settings=settings)
+                if cancel_requested.is_set():
+                    finish("cancelled", reason="Cancelled by user.")
+                    emit({"type": "error", "message": "Cancelled by user."})
+                    return
                 proc = subprocess.Popen(
                     command,
                     cwd=str(insertion.workspace),
                     text=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    env=agent_environment(),
+                    start_new_session=True,
                 )
-            except OSError as exc:
+            except (OSError, BridgeContractError) as exc:
                 reason = f"failed to launch {agent_label}: {exc}"
-                queue_finish(queue_arxiv_id, "failed", reason=reason)
+                finish("failed", reason=reason)
                 emit({"type": "error", "message": reason})
                 return
 
             set_active_run(
-                proc, cancel_requested, queue_arxiv_id, agent_id)
+                proc, cancel_requested, queue_arxiv_id, agent_id, job_id)
+            if cancel_requested.is_set():
+                stop_agent(proc)
             stderr_tail = []
 
             def drain_stderr():
@@ -661,21 +879,11 @@ class Handler(SimpleHTTPRequestHandler):
 
             def kill_for_timeout():
                 timed_out.set()
-                proc.kill()
-
-            def watch_client():
-                while proc.poll() is None:
-                    if client_gone.wait(timeout=1.0):
-                        cancel_requested.set()
-                        proc.kill()
-                        return
+                stop_agent(proc)
 
             stderr_thread = threading.Thread(
                 target=drain_stderr, daemon=True)
             stderr_thread.start()
-            watcher = threading.Thread(
-                target=watch_client, daemon=True)
-            watcher.start()
             killer = threading.Timer(
                 INSERT_TIMEOUT_S, kill_for_timeout)
             killer.start()
@@ -685,31 +893,26 @@ class Handler(SimpleHTTPRequestHandler):
                 code = proc.wait()
                 stderr_thread.join(timeout=5)
 
-                if cancel_requested.is_set() or client_gone.is_set():
+                if cancel_requested.is_set():
                     reason = "Cancelled by user."
-                    queue_finish(
-                        queue_arxiv_id, "cancelled",
-                        result=result, reason=reason)
+                    finish("cancelled", result=result, reason=reason)
                     emit({"type": "error", "message": reason})
                     self.log_message("%s insert cancelled", agent_label)
                     return
                 if timed_out.is_set():
                     reason = f"{agent_label} exceeded the 30-minute limit."
-                    queue_finish(
-                        queue_arxiv_id, "failed",
-                        result=result, reason=reason)
+                    finish("failed", result=result, reason=reason)
                     emit({"type": "error", "message": reason})
                     return
                 if code != 0 or not result["ok"]:
                     tail = "".join(stderr_tail)[-1500:]
                     reason = result["summary"] or tail or (
                         f"{agent_label} exited with code {code}")
-                    queue_finish(
-                        queue_arxiv_id, "failed",
-                        result=result, reason=reason)
+                    finish("failed", result=result, reason=reason)
                     emit({"type": "error", "message": reason})
                     return
 
+                activity_store.update(job_id, phase="validating")
                 outcome = result["structured_output"]
                 if not isinstance(outcome, dict):
                     raise BridgeContractError(
@@ -746,9 +949,11 @@ class Handler(SimpleHTTPRequestHandler):
                             + "; ".join(errors[:10]))
                     with graph_lock:
                         insertion.apply()
-                    queue_finish(
-                        queue_arxiv_id, "inserted", result=result,
-                        reason=reason, graph_node_id=graph_node_id)
+                    finish("inserted", result=result, reason=reason, graph_node_id=graph_node_id)
+                    try:
+                        document_store.fetch({"node_id": graph_node_id, "url": full_text_source["url"]})
+                    except (DocumentError, OSError) as exc:
+                        activity_store.update(job_id, attachment_error=str(exc)[:1000])
                 else:
                     errors = insertion.verify_unchanged()
                     if errors:
@@ -756,14 +961,10 @@ class Handler(SimpleHTTPRequestHandler):
                             f"{agent_label} changed files for a non-insertion "
                             "outcome: " + "; ".join(errors))
                     if outcome_name == "failed":
-                        queue_finish(
-                            queue_arxiv_id, "failed", result=result,
-                            reason=reason)
+                        finish("failed", result=result, reason=reason)
                         emit({"type": "error", "message": reason})
                         return
-                    queue_finish(
-                        queue_arxiv_id, "excluded", result=result,
-                        reason=reason)
+                    finish("excluded", result=result, reason=reason)
 
                 emit({
                     "type": "done",
@@ -783,20 +984,22 @@ class Handler(SimpleHTTPRequestHandler):
                 )
             except (BridgeContractError, OSError, ValueError) as exc:
                 reason = str(exc)
-                queue_finish(
-                    queue_arxiv_id, "failed", reason=reason)
+                finish("failed", reason=reason)
                 emit({"type": "error", "message": reason})
                 self.log_message(
                     "%s insert rejected: %s", agent_label, reason)
             finally:
                 killer.cancel()
-                if proc.poll() is None:
-                    proc.kill()
+                stop_agent(proc)
+                proc.wait()
+                stderr_thread.join(timeout=5)
+                proc.stdout.close()
+                proc.stderr.close()
                 clear_active_run(proc)
 
 
 def configure_workspace(root, use_environment=True):
-    global ROOT, GRAPH_JSON, queue_store, research_store
+    global ROOT, GRAPH_JSON, queue_store, research_store, document_store, activity_store
     ROOT = Path(root).resolve()
     try:
         from workspace import initialize_workspace, lock_workspace
@@ -804,11 +1007,20 @@ def configure_workspace(root, use_environment=True):
         from tools.workspace import initialize_workspace, lock_workspace
     initialize_workspace(ROOT)
     workspace_lock = lock_workspace(ROOT)
+    try:
+        from tools.desktop_sync import recover
+    except ModuleNotFoundError:
+        from desktop_sync import recover
+    recover(ROOT)
     GRAPH_JSON = ROOT / "data" / "graph.json"
     queue_store = QueueStateStore(
         (env_setting("BATCH_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106.json",
         (env_setting("STATE_PATH") if use_environment else None) or ROOT / "data/imports/adaptation-appendix-b-051-106-state.json")
-    research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT)
+    document_store = DocumentStore(ROOT, graph_lock)
+    document_store.recover()
+    activity_store = ActivityStore(document_store)
+    activity_store.recover()
+    research_store = ResearchStore(ROOT, insert_lock, graph_lock, APP_ROOT, document_store)
     research_store.recover()
     return workspace_lock
 
@@ -824,10 +1036,9 @@ def main():
         ROOT = args.workspace.expanduser().resolve()
     workspace_lock = configure_workspace(ROOT)
     try:
-        from tools.desktop_sync import DesktopStore, recover
+        from tools.desktop_sync import DesktopStore
     except ModuleNotFoundError:
-        from desktop_sync import DesktopStore, recover
-    recover(ROOT)
+        from desktop_sync import DesktopStore
 
     if not (DIST / "index.html").exists():
         print(
@@ -877,6 +1088,8 @@ def main():
         graph_catalog.close()
         cancel_active_run()
         for event in list(research_store.active.values()):
+            event.set()
+        for event in list(document_store.active.values()):
             event.set()
         # Give the worker time to kill its process group and persist cancellation.
         if insert_lock.acquire(timeout=5):

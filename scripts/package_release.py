@@ -29,6 +29,7 @@ def package(output, runtime=False):
         paths.extend(p for p in (APP / folder).rglob("*") if p.is_file()
                      and "__pycache__" not in p.parts and p.suffix not in (".pyc", ".map")
                      and not p.relative_to(APP).as_posix().startswith("dist/data/")
+                     and p.relative_to(APP).as_posix() != "docs/WORK_LAPTOP_HANDOFF.md"
                      and (folder != "desktop" or p.suffix in (".mjs", ".cjs", ".py"))
                      and not p.is_symlink())
     graph = {"meta": {"schema_version": 2, "title": "My paper universe", "revision": 0,

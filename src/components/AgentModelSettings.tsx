@@ -9,15 +9,11 @@ export function AgentModelSettings({
   agent?: LocalAgent;
   disabled?: boolean;
 }) {
-  const { choice, setChoice } = useAgentSettings(agent?.id ?? '');
+  const { choice, setChoice } = useAgentSettings(agent?.id ?? '', agent);
   const models = agent?.models ?? [];
   const known = models.find((m) => m.id === choice.model);
-  const [custom, setCustom] = useState(Boolean(choice.model && !known));
-  const efforts =
-    known?.efforts ??
-    (agent?.id === 'codex'
-      ? ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
-      : ['low', 'medium', 'high', 'xhigh', 'max']);
+  const [custom, setCustom] = useState(false);
+  const efforts = known?.efforts ?? (choice.model ? [] : (agent?.default_efforts ?? []));
   if (!agent) return null;
   return (
     <fieldset className="agent-model-settings" disabled={disabled}>
@@ -36,18 +32,23 @@ export function AgentModelSettings({
                 return;
               }
               setCustom(false);
-              const levels = models.find((m) => m.id === model)?.efforts ?? [];
+              const levels = model
+                ? (models.find((m) => m.id === model)?.efforts ?? [])
+                : (agent.default_efforts ?? []);
               setChoice({
                 model,
                 effort: levels.includes(choice.effort)
                   ? choice.effort
                   : levels.includes('medium')
                     ? 'medium'
-                    : '',
+                    : (levels[0] ?? ''),
               });
             }}
           >
-            <option value="">CLI default</option>
+            <option value="">
+              CLI default
+              {agent.default_model_label ? ` (${agent.default_model_label})` : ''}
+            </option>
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.label}
@@ -63,7 +64,12 @@ export function AgentModelSettings({
             value={choice.effort}
             onChange={(e) => setChoice({ ...choice, effort: e.target.value })}
           >
-            <option value="">CLI default</option>
+            <option value="">
+              CLI default{agent.default_effort ? ` (${agent.default_effort})` : ''}
+            </option>
+            {choice.effort && !efforts.includes(choice.effort) && (
+              <option value={choice.effort}>{choice.effort} (not reported by CLI)</option>
+            )}
             {efforts.map((effort) => (
               <option key={effort} value={effort}>
                 {effort}
@@ -79,14 +85,27 @@ export function AgentModelSettings({
             aria-label="Custom model ID"
             value={choice.model}
             maxLength={160}
-            placeholder={agent.id === 'codex' ? 'gpt-5.6-sol' : 'claude-sonnet-4-6'}
-            onChange={(e) => setChoice({ ...choice, model: e.target.value })}
+            placeholder="Exact model or deployment ID from your CLI"
+            onChange={(e) => {
+              setCustom(true);
+              setChoice({ ...choice, model: e.target.value });
+            }}
           />
         </label>
       )}
+      {agent.model_error ? (
+        <p role="status">{agent.model_error}</p>
+      ) : (
+        <p>
+          {agent.label}
+          {agent.cli_version ? ` ${agent.cli_version}` : ''}: models and effort levels
+          reported by your installed CLI. {known?.description}
+        </p>
+      )}
       <p>
-        Remembered across workflows in this browser. Model access and effort support depend
-        on your CLI and account.
+        Medium balances speed and depth; low is faster. Higher effort can take longer.
+        Choices are shared across imports and discussions on this device. Your account
+        determines model access.
       </p>
     </fieldset>
   );

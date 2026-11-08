@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { access, stat } from 'node:fs/promises';
+import { access, open, readdir, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -12,6 +12,26 @@ async function executable(file) {
   }
 }
 
+async function agentCommand(file) {
+  const node = path.join(path.dirname(file), 'node');
+  try {
+    if (await executable(node)) {
+      const handle = await open(file, 'r');
+      try {
+        const buffer = Buffer.alloc(128);
+        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+        if (/^#![^\n]*\bnode(?:\s|$)/.test(buffer.toString('utf8', 0, bytesRead)))
+          return `${JSON.stringify(node)} ${JSON.stringify(file)}`;
+      } finally {
+        await handle.close();
+      }
+    }
+  } catch {
+    // Executable-only files can still be launched without inspecting their shebang.
+  }
+  return JSON.stringify(file);
+}
+
 export async function agentEnvironment(
   inherited,
   {
@@ -20,6 +40,12 @@ export async function agentEnvironment(
     applications = '/Applications',
     additionalPaths = [
       path.join(home, '.local/bin'),
+      path.join(home, '.toolbox/bin'),
+      path.join(home, '.npm-global/bin'),
+      path.join(home, '.npm/bin'),
+      path.join(home, '.bun/bin'),
+      path.join(home, '.volta/bin'),
+      path.join(home, '.asdf/shims'),
       '/opt/homebrew/bin',
       '/usr/local/bin',
       '/usr/bin',
@@ -28,16 +54,40 @@ export async function agentEnvironment(
   } = {},
 ) {
   const env = { ...inherited };
+  const versionedPaths = [];
+  for (const [root, suffix] of [
+    [path.join(home, '.nvm/versions/node'), 'bin'],
+    [path.join(home, '.local/share/fnm/node-versions'), 'installation/bin'],
+    [path.join(home, '.local/share/mise/installs/node'), 'bin'],
+  ]) {
+    try {
+      const versions = await readdir(root);
+      versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+      versionedPaths.push(...versions.map((version) => path.join(root, version, suffix)));
+    } catch {
+      // A version manager is optional.
+    }
+  }
+  const inheritedPaths = (env.PATH || '').split(path.delimiter).filter(Boolean);
   const directories = [
-    ...new Set([
-      ...(env.PATH || '').split(path.delimiter).filter(Boolean),
-      ...additionalPaths,
-    ]),
+    ...new Set([...inheritedPaths, ...additionalPaths, ...versionedPaths]),
   ];
   env.PATH = directories.join(path.delimiter);
   for (const agent of ['CODEX', 'CLAUDE']) {
     if (!env[`ORBIS_${agent}`] && env[`LITBENCH_${agent}`])
       env[`ORBIS_${agent}`] = env[`LITBENCH_${agent}`];
+    if (env[`ORBIS_${agent}`]) continue;
+    const name = agent.toLowerCase();
+    for (const directory of directories) {
+      const candidate = path.join(directory, name);
+      if (!(await executable(candidate))) continue;
+      if (!inheritedPaths.includes(directory)) {
+        env[`ORBIS_${agent}`] = await agentCommand(candidate);
+        // npm-installed CLIs need the Node runtime from the same installation.
+        env.PATH = [directory, ...env.PATH.split(path.delimiter)].join(path.delimiter);
+      }
+      break;
+    }
   }
   if (env.ORBIS_CODEX || platform !== 'darwin') return env;
   // Respect an independently installed CLI before using an app's bundled CLI.

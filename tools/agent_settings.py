@@ -1,49 +1,19 @@
-"""Validated per-run model overrides. Never invokes a shell or reads credentials."""
+"""Validated per-run overrides using the installed CLI's model metadata."""
 import json
-import os
-import re
-from pathlib import Path
-
-EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
-MODEL_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+\[\]-]{0,159}\Z')
+try:
+    from agent_discovery import EFFORTS, MODEL_ID, agent_profile
+except ModuleNotFoundError:
+    from tools.agent_discovery import EFFORTS, MODEL_ID, agent_profile
 
 
 def model_catalog(agent):
-    if agent == 'codex':
-        # Codex refreshes this catalog itself. Do not initiate an agent run merely
-        # to populate a selector; fresh account availability is checked by the CLI.
-        path = Path(os.environ.get('CODEX_HOME', str(Path.home() / '.codex'))) / 'models_cache.json'
-        try:
-            data = json.loads(path.read_text(encoding='utf-8'))
-            models = []
-            for item in data.get('models', []):
-                slug = item.get('slug', '')
-                if item.get('visibility') != 'list' or not MODEL_ID.fullmatch(slug):
-                    continue
-                levels = [v['effort'] for v in item.get('supported_reasoning_levels', [])
-                          if v.get('effort') in EFFORTS]
-                models.append({'id': slug, 'label': item.get('display_name', slug), 'efforts': levels})
-            if models:
-                return models
-        except (OSError, ValueError, TypeError, AttributeError, KeyError):
-            pass
-        return [
-            {'id': 'gpt-5.6-sol', 'label': 'GPT-5.6 Sol', 'efforts': ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']},
-            {'id': 'gpt-5.5', 'label': 'GPT-5.5', 'efforts': ['low', 'medium', 'high', 'xhigh']},
-        ]
-    if agent == 'claude':
-        # Stable CLI aliases. Account and model-specific support is checked by Claude.
-        return [
-            {'id': 'sonnet', 'label': 'Sonnet (CLI alias)', 'efforts': ['low', 'medium', 'high']},
-            {'id': 'opus', 'label': 'Opus (CLI alias)', 'efforts': ['low', 'medium', 'high', 'xhigh', 'max']},
-            {'id': 'haiku', 'label': 'Haiku (CLI alias)', 'efforts': []},
-        ]
-    raise ValueError('Unknown local agent.')
+    return agent_profile(agent)['models']
 
 
 def normalize_settings(agent, value=None):
+    profile = agent_profile(agent)
     if value is None:
-        value = {'model': 'gpt-5.6-sol', 'effort': 'medium'} if agent == 'codex' else {}
+        value = {'model': '', 'effort': 'medium' if 'medium' in profile['default_efforts'] else ''}
     if not isinstance(value, dict) or set(value) - {'model', 'effort'}:
         raise ValueError('Agent settings must contain only model and effort.')
     model, effort = value.get('model', ''), value.get('effort', '')
@@ -53,9 +23,15 @@ def normalize_settings(agent, value=None):
         raise ValueError('Unknown reasoning effort.')
     if agent == 'claude' and effort not in ['', 'low', 'medium', 'high', 'xhigh', 'max']:
         raise ValueError('Claude Code does not support that effort level.')
-    known = next((m for m in model_catalog(agent) if m['id'] == model), None)
-    if known and effort and effort not in known['efforts']:
-        raise ValueError(f'{model} does not support {effort} effort. Choose a supported level or CLI default.')
+    known = next((m for m in profile['models']
+                  if m['id'] == model or model in m.get('aliases', [])), None)
+    if known:
+        model = known['id']
+    levels = known['efforts'] if known else profile['default_efforts'] if not model else None
+    if levels is not None and profile['model_source'] == 'cli' and effort and effort not in levels:
+        raise ValueError(f'{model or "CLI default"} does not support {effort} effort. Choose a supported level or CLI default.')
+    if agent == 'claude' and effort and profile.get('supports_effort') is False:
+        raise ValueError('Update Claude Code to use reasoning effort, or choose CLI default.')
     return {'model': model, 'effort': effort}
 
 

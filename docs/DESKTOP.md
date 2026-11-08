@@ -5,25 +5,43 @@ service, opens your library, and stops the service when you quit. Python and Nod
 are bundled; users do not need a terminal to launch it. AI features still use your
 own installed, signed-in Codex or Claude Code CLI and its account limits.
 
-The desktop app checks your executable search path and common user-local install
-locations. On macOS it also detects the Codex CLI bundled inside Codex or ChatGPT,
-including apps installed in your home Applications folder. Explicit `ORBIS_CODEX`
-and `ORBIS_CLAUDE` settings take precedence. Restart Orbis after installing an agent.
+Install and sign in to at least one current Codex or Claude Code CLI before using
+AI features. Orbis checks your executable search path, common user-local install
+locations, and Node installations managed by nvm, fnm, or mise automatically.
+On macOS it also detects the Codex CLI bundled inside Codex or ChatGPT, including
+apps installed in your home Applications folder. Explicit `ORBIS_CODEX` and
+`ORBIS_CLAUDE` settings take precedence. Restart Orbis after installing an agent.
 
-The Apple Silicon macOS preview has been built and tested locally, including a
-real Google sign-in and encrypted Drive upload. Linux AppImage and Debian package
-builds are configured, but Linux installation has not yet been verified. This is
-a preview, not a signed or notarized general release. No installer has been
-published automatically by this repository.
+Model and effort options come from the installed CLI, including provider-specific
+model IDs. New choices use that CLI's configured model and medium effort when
+supported. Orbis uses your existing CLI authentication and does not edit its global
+settings. If discovery fails, the picker explains the problem and keeps CLI default
+available. Your provider/account determines whether an advertised model can run.
+
+Desktop executable discovery is in `desktop/agent-environment.mjs`. Read-only
+model queries live in `tools/agent_discovery.py`, and per-run validation is in
+`tools/agent_settings.py`. The shared picker is `AgentModelSettings.tsx`.
+Check these paths with `npm run test:desktop`, `npm run test:python`, and
+`npm run test:unit`.
+
+The 2.1.0-beta.1 Apple Silicon macOS preview passed packaged native smoke,
+existing-profile upgrade, live Google sync, and an isolated original-backed Codex
+discussion. Ubuntu native reading and Drive-original checks were exercised during
+upstream development. See [macOS verification](MAC_VERIFICATION.md) for the exact
+coverage and limits. This is an unsigned, unnotarized preview; automatic updates
+are not included.
 
 ## Your first launch
 
 1. On macOS, copy `Orbis.app` from the disk image to Applications and open it.
+   On Ubuntu, make the AppImage executable and open it, or install the Debian
+   package. Development previews must use their own `ORBIS_USER_DATA` directory.
 2. A fresh installation starts with an empty library. To bring an existing library,
    open **Local library → Import existing Orbis library** and select the folder
-   containing `data/graph.json` and `papers/`. Import copies it; the original stays
-   intact. Import is available only before sync is paired and while the app library
-   is empty. Stop any running agents in the source library first.
+   containing `data/graph.json` and `papers/`. Import copies all graphs, notes,
+   conversations, highlights, and verified local originals. Import is available
+   only from Main, before sync is paired and while the app library is empty.
+   Stop any running agents in the source library first.
 3. Add sources and edit your graph as usual. Accepted graph edits are saved
    automatically in the desktop app. Editor drafts and agent proposals still need
    their normal **Apply** or **Save** action before becoming library changes.
@@ -64,10 +82,23 @@ other laptop is asleep or while offline. While open, it checks Drive every
 30 seconds. **Sync now** performs an immediate check. There is no Git push/pull
 step and no always-on Orbis server. Quitting the app stops background sync.
 
-Sync includes every graph's records, Markdown notes, and saved conversations.
-It excludes agent credentials, process locks, running import queues, and caches.
-This version does **not** download or sync original PDFs, nor add full-paper
-retrieval to discussions. Those are separate future features.
+Sync includes every graph's records, Markdown notes, saved conversations, original
+metadata, and saved highlights/comments. Original PDFs and readable articles are
+separately encrypted immutable files in the same private Drive area. They upload
+before a snapshot references them and download on demand. **Keep offline** retains
+a local copy; **Remove download** checks the Drive copy before removing local bytes.
+Neither action deletes saved notes or highlights.
+
+Agent credentials, process locks, local drafts, pins, reading position, running jobs,
+and text caches stay on the device. Model/effort and navigation preferences persist
+across native restarts and local port changes without changing global CLI settings.
+Upgrade all devices before adding originals: older clients can read legacy snapshots
+but cannot safely edit attachment-enabled libraries.
+
+The galaxy pauses behind the reader, discussion, or Add source, and while the
+window is minimized. With software graphics it also stops redrawing while idle;
+rotation starts paused and can be enabled with **Resume universe rotation**.
+Hover, selection, orbit, and zoom wake the scene when needed.
 
 ## One-time setup for the app owner
 
@@ -97,13 +128,14 @@ loopback callback. Passwords are never entered into Orbis. Consult Google's
 [installed-app OAuth guide](https://developers.google.com/identity/protocols/oauth2/native-app),
 [app-data documentation](https://developers.google.com/workspace/drive/api/guides/appdata),
 and [current API limits and pricing](https://developers.google.com/workspace/drive/api/guides/limits).
-Standard use currently has no additional API charge; do not assume unlimited
-free usage when planning a large public launch. Drive storage limits also apply.
+Review current API terms and quotas before a broad launch. Uploaded files count
+against each user’s Drive storage quota.
 
 ## Encryption, conflicts, and recovery
 
 Orbis compresses snapshots and encrypts them with AES-256-GCM before uploading
-them into Drive's hidden app-data area. The recovery key stays on paired devices;
+them into Drive's hidden app-data area. Originals use separate authenticated
+encryption tied to the vault and their content hash. The recovery key stays on paired devices;
 Google does not receive it. Local working notes remain ordinary readable files.
 Credentials and the key use Electron's OS-backed secure storage. Linux sync
 requires a supported Secret Service or KWallet backend and refuses the insecure
@@ -124,13 +156,16 @@ it does not delete Drive data or revoke the app in Google Account settings.
 
 ## Build installers
 
-Build on the target OS and CPU architecture from an application checkout with an
-empty graph. Python 3.12 and Node 22 are the tested build tools.
+Build on the target OS and CPU architecture from a clean application export.
+Python 3.12, uv, and Node 22 are the tested build tools. Exporting creates an empty
+library without modifying the personal library in your source checkout:
 
 ```sh
+python3 scripts/package_release.py --output /tmp/orbis-source.zip
+unzip /tmp/orbis-source.zip -d /tmp/orbis-build
+cd /tmp/orbis-build/orbis
+uv sync --locked --python 3.12
 npm ci
-node node_modules/electron/install.js
-python3 -m pip install pyinstaller==6.22.3
 npm run test:desktop
 npm run test
 npm run desktop:build
@@ -138,7 +173,7 @@ npm run desktop:build
 
 Installers are written to `release/desktop/`: DMG/ZIP on macOS and AppImage/DEB on
 Linux. The manual **Build Orbis desktop previews** GitHub Actions workflow provides
-native runners for both platforms. The build script rejects a populated graph;
-personal libraries are never intentionally bundled. Apple signing and notarization,
-Linux runtime verification, automatic updates, and a public OAuth rollout remain
-release work.
+native runners for both platforms and performs the same clean export. The build
+script rejects a populated graph. Private historical handoff documents, credentials,
+and Git history are excluded from exports. Apple signing and notarization,
+automatic updates, and a public OAuth rollout remain release work.

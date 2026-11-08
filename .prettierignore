@@ -18,3 +18,6 @@ uv.lock
 build/
 release/
 desktop/google-client.json
+
+# Private historical context, excluded from application packages.
+docs/WORK_LAPTOP_HANDOFF.md

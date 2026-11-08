@@ -61,6 +61,8 @@ interface OrbitControlsLike {
   minDistance: number;
   maxDistance: number;
   update?: () => void;
+  addEventListener?: (type: 'change', listener: () => void) => void;
+  removeEventListener?: (type: 'change', listener: () => void) => void;
 }
 
 type GraphNode = NodeObject<SceneNode>;
@@ -124,7 +126,7 @@ function GraphFallback({
   );
 }
 
-export function GraphScene() {
+export function GraphScene({ paused = false }: { paused?: boolean }) {
   const graph = useWorkspaceStore((state) => state.graph)!;
   const filters = useWorkspaceStore((state) => state.filters);
   const selection = useWorkspaceStore((state) => state.selection);
@@ -137,12 +139,34 @@ export function GraphScene() {
   const [hasWebGL] = useState(supportsWebGL);
   const [renderFailure, setRenderFailure] = useState<string | null>(null);
   const [sceneReady, setSceneReady] = useState(false);
+  const [softwareRenderer, setSoftwareRenderer] = useState(false);
+  const [windowVisible, setWindowVisible] = useState(true);
   const [lens, setLens] = useState<UniverseLens>('semantic');
   const [showRelations, setShowRelations] = useState(true);
   const [showConcepts, setShowConcepts] = useState(false);
   const [autoRotate, setAutoRotate] = useState(
     () => !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   );
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused || !windowVisible;
+  const rotatingRef = useRef(false);
+  rotatingRef.current = autoRotate && lens === 'semantic';
+  const idleTimer = useRef<number>();
+  const waking = useRef(false);
+  const wakeScene = useCallback(() => {
+    const forceGraph = graphRef.current;
+    if (!forceGraph || pausedRef.current || document.hidden || waking.current) return;
+    window.clearTimeout(idleTimer.current);
+    waking.current = true;
+    try {
+      forceGraph.resumeAnimation();
+    } finally {
+      waking.current = false;
+    }
+    if (!rotatingRef.current)
+      idleTimer.current = window.setTimeout(() => forceGraph.pauseAnimation(), 1_200);
+  }, []);
+  useEffect(() => window.orbis?.onWindowVisibility?.(setWindowVisible), []);
 
   const visibleGraph = useMemo(() => filterGraph(graph, filters), [filters, graph]);
   const conceptLayerActive = showConcepts || filters.query.trim().length > 0;
@@ -216,6 +240,15 @@ export function GraphScene() {
         return;
       }
       const renderer = forceGraph.renderer();
+      const context = renderer.getContext();
+      const debug = context.getExtension('WEBGL_debug_renderer_info');
+      const device = context.getParameter(
+        debug?.UNMASKED_RENDERER_WEBGL ?? context.RENDERER,
+      );
+      if (/swiftshader|llvmpipe|softpipe|software/i.test(String(device))) {
+        setSoftwareRenderer(true);
+        setAutoRotate(false);
+      }
       const camera = forceGraph.camera() as PerspectiveCamera;
       const controls = forceGraph.controls() as OrbitControlsLike;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
@@ -264,9 +297,35 @@ export function GraphScene() {
     const controls = graphRef.current.controls() as OrbitControlsLike;
     controls.autoRotate = autoRotate && lens === 'semantic';
     controls.autoRotateSpeed = 0.14;
+    if (pausedRef.current) return;
     controls.update?.();
-    graphRef.current.resumeAnimation();
-  }, [autoRotate, hasWebGL, lens, renderFailure, sceneReady]);
+    wakeScene();
+  }, [autoRotate, hasWebGL, lens, renderFailure, sceneReady, wakeScene]);
+
+  useEffect(() => {
+    if (!sceneReady || !graphRef.current) return;
+    const forceGraph = graphRef.current;
+    const canvas = forceGraph.renderer().domElement;
+    const controls = forceGraph.controls() as OrbitControlsLike;
+    const visibility = () => {
+      if (document.hidden || pausedRef.current) {
+        window.clearTimeout(idleTimer.current);
+        forceGraph.pauseAnimation();
+      } else wakeScene();
+    };
+    // Stationary scenes need no redraws; pointer movement still wakes picking and orbit controls.
+    for (const event of ['pointermove', 'pointerdown', 'wheel'])
+      canvas.addEventListener(event, wakeScene, { passive: true });
+    controls.addEventListener?.('change', wakeScene);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.clearTimeout(idleTimer.current);
+      for (const event of ['pointermove', 'pointerdown', 'wheel'])
+        canvas.removeEventListener(event, wakeScene);
+      controls.removeEventListener?.('change', wakeScene);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [sceneReady, wakeScene]);
 
   useEffect(() => {
     if (!hasWebGL || renderFailure || !sceneReady || !graphRef.current) return;
@@ -282,7 +341,7 @@ export function GraphScene() {
   const fitAll = useCallback(
     (duration = 650) => {
       const forceGraph = graphRef.current;
-      if (!forceGraph || !sceneData.nodes.length) return;
+      if (pausedRef.current || !forceGraph || !sceneData.nodes.length) return;
       const target = {
         x: (sceneData.bounds.xMin + sceneData.bounds.xMax) / 2,
         y: (sceneData.bounds.yMin + sceneData.bounds.yMax) / 2,
@@ -306,9 +365,9 @@ export function GraphScene() {
         target,
         duration,
       );
-      forceGraph.resumeAnimation();
+      wakeScene();
     },
-    [lens, sceneData.bounds, sceneData.nodes.length, size.width],
+    [lens, sceneData.bounds, sceneData.nodes.length, size.width, wakeScene],
   );
 
   useEffect(() => {
@@ -329,7 +388,7 @@ export function GraphScene() {
   const focusPoint = useCallback(
     (point: { x: number; y: number; z: number }, distance = 120, duration = 650) => {
       const forceGraph = graphRef.current;
-      if (!forceGraph) return;
+      if (pausedRef.current || !forceGraph) return;
       const camera = forceGraph.camera();
       const direction = new Vector3(
         camera.position.x - point.x,
@@ -347,9 +406,9 @@ export function GraphScene() {
         point,
         duration,
       );
-      forceGraph.resumeAnimation();
+      wakeScene();
     },
-    [size.width],
+    [size.width, wakeScene],
   );
 
   useEffect(() => {
@@ -375,6 +434,26 @@ export function GraphScene() {
       });
     }
   }, [focusPoint, sceneData.nodes, sceneData.relationLinks, selection]);
+
+  useEffect(() => {
+    if (!sceneReady || !graphRef.current) return;
+    // Data updates can restart the renderer while a paper still covers the galaxy.
+    if (paused || !windowVisible || document.hidden) {
+      window.clearTimeout(idleTimer.current);
+      graphRef.current.pauseAnimation();
+    } else wakeScene();
+  }, [
+    graphData,
+    hovered,
+    lens,
+    autoRotate,
+    paused,
+    sceneReady,
+    showRelations,
+    size,
+    wakeScene,
+    windowVisible,
+  ]);
 
   const focusSelection = useCallback(() => {
     if (selection?.kind === 'node') {
@@ -488,6 +567,7 @@ export function GraphScene() {
       aria-label={`Interactive literature universe with ${sceneData.paperNodes.length} papers, ${sceneData.fields.length} research fields, and ${sceneData.relationLinks.length} visible relationships`}
       data-testid="graph-stage"
       data-view="universe"
+      data-render-mode={softwareRenderer ? 'software' : 'hardware'}
       data-render-state={
         !hasWebGL || renderFailure ? 'fallback' : sceneReady ? 'ready' : 'starting'
       }

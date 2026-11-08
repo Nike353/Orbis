@@ -168,3 +168,38 @@ least 80 characters of explanation. Additional analysis may follow. This
 insertion-only contract does not invalidate legacy saved graphs or impose
 research-paper sections on blogs and websites. The full note file should retain
 the same explanation, alongside graph relations and open questions.
+
+## Originals, highlights, and research review
+
+These are separate catalogs; the graph remains schema version 2.
+
+- `data/documents.json` maps a 32-character UUID hex ID to `id`, `node_id`,
+  `sha256`, `media_type`, `size`, `filename`, `source_url`, `source_version`, and
+  `retrieved_at`. Types are `application/pdf` and `text/plain`, at most 25 MB.
+  SHA-256 identifies immutable bytes at `attachments/<sha256>.blob`. Distinct
+  source URLs/versions retain separate provenance even when bytes are identical.
+- `data/annotations.json` maps UUID hex IDs to `id`, `document_id`, `page`,
+  `quote`, `comment`, `color`, `rects`, and `created_at`. Page numbering starts
+  at 1. Rectangles contain normalized `x`, `y`, `width`, and `height` in `[0, 1]`.
+  Saved comments are Markdown; an unsaved editor draft lives locally instead.
+- `.orbis/document-text.sqlite3` is a disposable, extractor-versioned page/section
+  FTS cache. `.orbis/` also stores local availability, Keep offline, reading
+  position, transfer state, jobs, and unsent discussion/comment drafts. These
+  device-local files are excluded from Drive snapshots and application builds.
+- `data/research.json` contains conversations. Original citations retain paper
+  ID, document ID, SHA-256, source URL, and page/section. Citation quotes must
+  resolve to the supplied immutable source; this check does not verify the
+  semantic correctness of an answer.
+- Pending turns include a `base_fingerprint` of portable graph content, excluding
+  device-local revision/time and normalizing record order and integral numbers.
+  Acceptance also checks the current device revision. Changed content and legacy
+  proposals without a fingerprint require a fresh proposal. History remains
+  readable. Selective `summary` proposals replace only `paper.summary` and
+  `paper.key_findings` after explicit review.
+
+Drive snapshot schema 1 remains valid for libraries without originals. Schema 2
+adds `documents` and `annotations` per graph. Original bytes are separately
+encrypted immutable Drive files, uploaded before the referencing snapshot.
+Upgrade all devices before editing a schema-2 library; older clients do not
+understand attachment metadata. Removing a verified local download keeps its
+portable record, highlights, source version, and remote original.

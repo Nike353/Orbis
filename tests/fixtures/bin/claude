@@ -1,3 +1,16 @@
 #!/usr/bin/env bash
+after_tools=false
+for arg in "$@"; do
+  case "$arg" in
+    --help|--version)
+      exec "${ORBIS_TEST_PYTHON:-python3}" "$(dirname "${BASH_SOURCE[0]}")/../research_agent.py" "$@"
+      ;;
+  esac
+  if [ "$after_tools" = true ] && [ -z "$arg" ]; then
+    exec "${ORBIS_TEST_PYTHON:-python3}" "$(dirname "${BASH_SOURCE[0]}")/../research_agent.py" "$@"
+  fi
+  after_tools=false
+  if [ "$arg" = "--tools" ]; then after_tools=true; fi
+done
 printf '%s\n' '{"type":"system","subtype":"init"}'
 sleep 30

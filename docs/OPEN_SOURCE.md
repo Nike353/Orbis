@@ -1,8 +1,8 @@
 # Distributing Orbis
 
 The public repository distributes the Orbis desktop application with an empty
-library and optional encrypted Google Drive sync. ScholarSync is the maintainer's
-separate private library repository; it is not a distribution source.
+library and optional encrypted Google Drive sync. Personal library repositories
+are separate from the public application history.
 
 Publish macOS and Linux installers as GitHub Release downloads after platform
 verification. Each user runs the local application and can connect their own

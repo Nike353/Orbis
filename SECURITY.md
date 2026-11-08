@@ -1,27 +1,40 @@
 # Local execution and data handling
 
-Orbis is a single-user localhost application. Do not expose its server to
-the public internet or put an unauthenticated proxy in front of it. Workspaces
-contain your graph, notes, conversations, and import state.
+Orbis is a single-user localhost application. Do not expose its server to the
+internet or place an unauthenticated proxy in front of it. Workspaces contain
+graphs, notes, saved conversations, import state, originals, and annotations.
 
-The desktop preview can sync library records, notes, and saved conversations to
-Google Drive's app-private storage after the user connects their account. Uploads
-are compressed and encrypted with a device-held AES-256-GCM key. Google refresh
-tokens and the recovery key are stored using the operating system's secure
-storage; they are not synced or committed. Local working library files are not
-encrypted by Orbis. The native local API additionally requires a per-launch
-secret header. See [desktop security and limitations](docs/DESKTOP.md).
+## Storage and sync
 
-AI operations send selected library context to the chosen CLI's configured
-provider. They use the CLI's authentication and account limits; Orbis does
-not need or distribute an API key. Paper insertion can retrieve external source
-content. Research answers use stored library context and disable external tools
-where the CLI supports it.
+Local working files and downloaded originals are readable files; Orbis does not
+encrypt the local library. The desktop app optionally syncs compressed library
+snapshots and separate immutable original-file blobs to Google Drive's app-private
+storage. Uploads use authenticated AES-256-GCM encryption. Paired devices hold
+the recovery key; Google sign-in alone cannot recover it.
 
-Paper content is untrusted input. Agent output is validated, and changes require
-review before application. Disposable execution directories and the CLI's own
-sandbox settings reduce access; these are not a substitute for OS isolation
-against a compromised executable. Only configure agent binaries you trust.
+Google tokens and the recovery key use Electron's OS-backed secure storage and
+are not synced or committed. Linux refuses the insecure basic_text fallback.
+Source distributions exclude OAuth client configuration; distributors may bundle
+an app's Desktop OAuth configuration, but never user tokens or recovery keys.
+The native local API also requires a per-launch secret. See [DESKTOP.md](docs/DESKTOP.md)
+for consent scopes, conflict handling, backup behavior, and preview limitations.
 
-Report vulnerabilities privately to the repository maintainer rather than posting
-credentials, personal notes, or a working exploit against someone else's machine.
+## Agents and untrusted content
+
+AI operations use the selected CLI's authentication and account limits. Selected
+notes, source passages, and questions are sent to its configured provider; models
+are not necessarily local. Import and original retrieval can access external
+URLs. Research uses bounded, locally retrieved original passages with notes-only
+fallback, and restricts external tools where supported by the CLI.
+
+Paper content and agent output are untrusted. Orbis checks schemas, citation
+anchors, source identity, and revision/ownership constraints, and requires review
+of proposed library edits. These checks do not establish factual correctness.
+Disposable execution directories and CLI sandbox settings reduce access; they
+are not OS isolation against a compromised executable. Configure only agent
+binaries you trust.
+
+The preview has not received an independent security audit. Keep a separate
+backup of valuable library content and protect your recovery key. Report
+vulnerabilities privately to the repository maintainer; do not post credentials,
+personal notes, or exploits against someone else's machine in a public issue.

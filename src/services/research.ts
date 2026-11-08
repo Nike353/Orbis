@@ -1,11 +1,29 @@
 import type { AgentSettings } from './agentBridge';
 import type { GraphNode, GraphEdge } from '../domain/schema';
+import type { SelectedPassage } from './documents';
 
 export interface ResearchResult {
   answer: string;
-  citations: { node_id: string; evidence: string }[];
+  citations: ResearchCitation[];
+  source_mode?: 'originals' | 'mixed' | 'notes_only';
+  quality_warnings?: string[];
   changes: Record<string, unknown>[];
-  cells: { paper_id: string; criterion: string; value: string; evidence: string }[];
+  cells: (Omit<ResearchCitation, 'node_id'> & {
+    paper_id: string;
+    criterion: string;
+    value: string;
+    source_mode?: 'originals' | 'notes_only';
+  })[];
+}
+export interface ResearchCitation {
+  node_id: string;
+  evidence: string;
+  passage_id?: string;
+  document_id?: string;
+  sha256?: string;
+  page?: number;
+  section?: string;
+  source_url?: string;
 }
 export interface ResearchTurn {
   id: string;
@@ -13,8 +31,12 @@ export interface ResearchTurn {
   agent: string;
   settings?: AgentSettings;
   status: 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  phase?: string;
+  selection?: SelectedPassage;
   created_at: string;
   base_revision: number;
+  base_fingerprint?: string;
+  proposal_stale?: boolean;
   duration_s?: number;
   cost_usd?: number | null;
   error?: string;
@@ -26,6 +48,14 @@ export interface ResearchTurn {
     records_omitted: number;
     history_turns: number;
     note_character_limit: number;
+    original_passages?: number;
+    original_sources?: {
+      node_id: string;
+      document_id?: string;
+      status?: string;
+      text_status?: string;
+      extraction_error?: string;
+    }[];
   };
   preview?: {
     action: string;
@@ -95,7 +125,9 @@ export function sessionMarkdown(
                 (c) => c.paper_id === id && c.criterion === criterion,
               );
               return cell
-                ? escapeCell(`${cell.value} [Evidence: ${cell.evidence}]`)
+                ? escapeCell(
+                    `${cell.value} [${cell.page ? `Page ${cell.page} (${cell.section})` : 'Library notes'}: ${cell.evidence}]`,
+                  )
                 : 'Not established';
             })
             .join(' | ')} |`,
@@ -104,7 +136,9 @@ export function sessionMarkdown(
       lines.push('');
     }
     for (const c of turn.result.citations)
-      lines.push(`- ${name(c.node_id)}: ${c.evidence}`);
+      lines.push(
+        `- ${name(c.node_id)}${c.page ? ` · page ${c.page} (${c.section})` : ' · library notes'}: ${c.evidence}`,
+      );
     if (turn.preview?.length)
       lines.push(
         '',
@@ -132,7 +166,12 @@ export function comparisonCsv(
         const c = turn.result?.cells.find(
           (v) => v.paper_id === id && v.criterion === criterion,
         );
-        return [c?.value ?? 'Not established', c?.evidence ?? ''];
+        return [
+          c?.value ?? 'Not established',
+          c
+            ? `${c.page ? `Page ${c.page} (${c.section})` : 'Library notes'}: ${c.evidence}`
+            : '',
+        ];
       }),
     ]);
   return rows.map((r) => r.map(cell).join(',')).join('\r\n');

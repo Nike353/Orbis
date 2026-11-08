@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   MessagesSquare,
   Table2,
+  Activity,
 } from 'lucide-react';
 import { proposedItems } from '../domain/graph';
 import { useWorkspaceStore, type WorkspaceTab } from '../store/workspaceStore';
@@ -21,6 +22,7 @@ const navItems: Array<{
   { id: 'imports', label: 'Add papers', icon: ListPlus },
   { id: 'research', label: 'Discuss', icon: MessagesSquare },
   { id: 'compare', label: 'Compare', icon: Table2 },
+  { id: 'activity', label: 'Activity', icon: Activity },
 ];
 
 export function AppNav() {
@@ -38,8 +40,11 @@ export function AppNav() {
             key={id}
             className={activeTab === id ? 'active' : ''}
             onClick={() => {
-              if (window.matchMedia('(max-width: 780px)').matches) select(null);
-              setTab(activeTab === id ? null : id);
+              const compactInspector =
+                window.matchMedia('(max-width: 1120px)').matches &&
+                useWorkspaceStore.getState().selection !== null;
+              if (compactInspector) select(null);
+              setTab(activeTab === id && !compactInspector ? null : id);
             }}
             aria-label={label}
             aria-pressed={activeTab === id}

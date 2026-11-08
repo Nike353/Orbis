@@ -7,9 +7,31 @@ test('passes selected model and effort from add, discuss, and compare', async ({
   await page.route('**/api/health', async (route) => {
     const response = await route.fetch();
     const health = await response.json();
-    health.agents.forEach((a: { available: boolean }) => {
-      a.available = true;
-    });
+    health.agents = [
+      {
+        id: 'codex',
+        label: 'Codex',
+        available: true,
+        default_model_label: 'Sol',
+        default_efforts: ['low', 'medium', 'high'],
+        model_source: 'cli',
+        models: [
+          {
+            id: 'global.openai.gpt-5.6-sol',
+            label: 'Sol',
+            efforts: ['low', 'medium', 'high'],
+          },
+        ],
+      },
+      {
+        id: 'claude',
+        label: 'Claude Code',
+        available: true,
+        default_efforts: ['low', 'medium', 'high'],
+        model_source: 'cli',
+        models: [{ id: 'opus', label: 'Opus', efforts: ['low', 'medium', 'high'] }],
+      },
+    ];
     health.default_agent = 'codex';
     await route.fulfill({ json: health });
   });
@@ -38,20 +60,27 @@ test('passes selected model and effort from add, discuss, and compare', async ({
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Add paper', exact: true }).click();
-  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('gpt-5.6-sol');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Effort')).toHaveValue('medium');
-  await page.getByLabel('Model', { exact: true }).selectOption('gpt-5.5');
+  await page.getByLabel('Model', { exact: true }).selectOption('global.openai.gpt-5.6-sol');
   await page.getByLabel('Effort').selectOption('high');
   await page.getByRole('textbox', { name: 'Paper URL' }).fill('https://example.org/test');
   await page.getByRole('button', { name: 'Read & add' }).click();
-  await expect.poll(() => inserted.settings).toEqual({ model: 'gpt-5.5', effort: 'high' });
+  await expect
+    .poll(() => inserted.settings)
+    .toEqual({ model: 'global.openai.gpt-5.6-sol', effort: 'high' });
   await page.getByRole('button', { name: 'Close add paper dialog' }).click();
   await page.getByRole('button', { name: 'Discuss', exact: true }).click();
-  await expect(page.getByLabel('Model', { exact: true })).toHaveValue('gpt-5.5');
+  await expect(page.getByLabel('Model', { exact: true })).toHaveValue(
+    'global.openai.gpt-5.6-sol',
+  );
   await page.getByPlaceholder(/What is the key idea/).fill('Explain my research library');
   await page.getByRole('button', { name: 'Ask agent', exact: true }).click();
   await expect.poll(() => requests.length).toBe(1);
-  expect(requests[0].settings).toEqual({ model: 'gpt-5.5', effort: 'high' });
+  expect(requests[0].settings).toEqual({
+    model: 'global.openai.gpt-5.6-sol',
+    effort: 'high',
+  });
   await page.getByRole('button', { name: 'Compare', exact: true }).click();
   await page.locator('.scope-picker input[type="checkbox"]').nth(0).check();
   await page.locator('.scope-picker input[type="checkbox"]').nth(1).check();

@@ -15,8 +15,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
       - run: sh start.sh --prepare-only
       - run: npm run verify
+      - run: npm run test:desktop
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - run: python3 scripts/package_release.py --runtime --output release/orbis-runtime.zip

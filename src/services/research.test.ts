@@ -58,8 +58,19 @@ describe('research exports', () => {
   it('keeps scope, citations, table evidence, and escaped pipes in Markdown', () => {
     const md = sessionMarkdown(session, labels);
     expect(md).toContain('Scope: A, B');
-    expect(md).toContain('Evidence: Quoted "evidence" \\| detail<br>next line');
-    expect(md).toContain('- A: Source note');
+    expect(md).toContain('Library notes: Quoted "evidence" \\| detail<br>next line');
+    expect(md).toContain('- A · library notes: Source note');
     expect(md).toContain('| B | Not established |');
+  });
+  it('retains page and section anchors when exporting original-source answers', () => {
+    const original = structuredClone(session);
+    original.turns[0].result!.citations[0].page = 3;
+    original.turns[0].result!.citations[0].section = 'Results';
+    original.turns[0].result!.cells[0].page = 3;
+    original.turns[0].result!.cells[0].section = 'Results';
+    expect(sessionMarkdown(original, labels)).toContain('page 3 (Results)');
+    expect(comparisonCsv(original, original.turns[0], labels)).toContain(
+      'Page 3 (Results)',
+    );
   });
 });

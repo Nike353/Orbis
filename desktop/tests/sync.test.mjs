@@ -4,7 +4,18 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { seal, unseal, mergeSnapshots, mergeCommits, hash } from '../sync-core.mjs';
+import {
+  seal,
+  unseal,
+  mergeSnapshots,
+  mergeCommits,
+  hash,
+  hashBytes,
+  sealOriginal,
+  unsealOriginal,
+  normalizedSnapshot,
+  snapshotsEqual,
+} from '../sync-core.mjs';
 import { SyncEngine } from '../sync-engine.mjs';
 import { validateClient, requireDriveConsent, authorize } from '../google-drive.mjs';
 
@@ -148,7 +159,12 @@ test('OAuth loopback rejects incorrect state and uses PKCE without sending crede
 class FakeDrive {
   files = [];
   offline = false;
+  quota = false;
+  loseUploadResponse = false;
+  lists = 0;
+  downloads = [];
   async list(kind, vault) {
+    this.lists++;
     if (this.offline) throw new Error('offline');
     return this.files.filter(
       (f) =>
@@ -157,6 +173,8 @@ class FakeDrive {
   }
   async create(name, properties, bytes) {
     if (this.offline) throw new Error('offline');
+    if (this.quota && properties.orbisKind === 'original')
+      throw new Error('Google Drive storage quota exceeded');
     const file = {
       id: String(this.files.length + 1),
       name,
@@ -164,16 +182,30 @@ class FakeDrive {
       bytes,
     };
     this.files.push(file);
+    if (this.loseUploadResponse && properties.orbisKind === 'original') {
+      this.loseUploadResponse = false;
+      throw new Error('Upload response interrupted');
+    }
     return file;
   }
   async download(id) {
+    if (this.offline) throw new Error('offline');
+    this.downloads.push(id);
     return this.files.find((f) => f.id === id).bytes;
   }
 }
 async function device(t, drive, state = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'orbis-sync-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const local = { snapshot: empty(), failApply: false, saves: 0, changes: 0 };
+  const local = {
+    snapshot: empty(),
+    failApply: false,
+    saves: 0,
+    changes: 0,
+    blobs: new Map(),
+    states: {},
+    writes: 0,
+  };
   const engine = new SyncEngine({
     drive,
     state: { device: directory, ...state },
@@ -190,6 +222,46 @@ async function device(t, drive, state = {}) {
         if (local.failApply || hash(local.snapshot) !== expected)
           throw new Error('CAS conflict');
         local.snapshot = structuredClone(snapshot);
+      },
+      originals: async () => ({
+        graphs: Object.fromEntries(
+          Object.entries(local.snapshot.graphs).map(([graph, item]) => [
+            graph,
+            Object.fromEntries(
+              Object.values(item.documents ?? {}).map((record) => [
+                record.sha256,
+                {
+                  size: record.size,
+                  available:
+                    local.blobs.has(`${graph}:${record.sha256}`) &&
+                    hashBytes(local.blobs.get(`${graph}:${record.sha256}`)) ===
+                      record.sha256,
+                  ...(local.states[graph]?.[record.sha256] ?? {}),
+                },
+              ]),
+            ),
+          ]),
+        ),
+      }),
+      readOriginal: async (graph, sha) => local.blobs.get(`${graph}:${sha}`),
+      writeOriginal: async (graph, sha, bytes) => {
+        const record = Object.values(local.snapshot.graphs[graph]?.documents ?? {}).find(
+          (item) => item.sha256 === sha,
+        );
+        if (!record || hashBytes(bytes) !== sha || bytes.length !== record.size)
+          throw new Error('Original metadata or integrity mismatch');
+        local.blobs.set(`${graph}:${sha}`, bytes);
+        local.writes++;
+      },
+      originalState: async (graph, sha, update) => {
+        if (
+          !Object.values(local.snapshot.graphs[graph]?.documents ?? {}).some(
+            (item) => item.sha256 === sha,
+          )
+        )
+          throw new Error('Unknown original');
+        local.states[graph] ??= {};
+        local.states[graph][sha] = { ...local.states[graph][sha], ...update };
       },
     },
     changed: () => local.changes++,
@@ -229,6 +301,274 @@ test('two laptops converge after independent offline edits and restart', async (
   });
   await a.engine.sync();
   assert.equal(a.engine.status.phase, 'synced');
+});
+function attach(
+  local,
+  text = 'Synthetic original with a result of 12 percent.',
+  graph = 'main',
+  id = 'a'.repeat(32),
+) {
+  local.snapshot = normalizedSnapshot(local.snapshot);
+  if (!local.snapshot.graphs[graph])
+    local.snapshot.graphs[graph] = structuredClone(empty().graphs.main);
+  const item = local.snapshot.graphs[graph],
+    bytes = Buffer.from(text);
+  const record = {
+    id,
+    node_id: 'paper',
+    sha256: hashBytes(bytes),
+    size: bytes.length,
+    media_type: 'text/plain',
+    filename: 'original.txt',
+    source_url: 'https://example.com/paper',
+    source_version: '',
+    retrieved_at: '2026-11-07T20:00:00Z',
+  };
+  item.nodes.paper = { id: 'paper', type: 'paper', notes: 'Personal note' };
+  item.documents = { ...item.documents, [id]: record };
+  item.annotations ??= {};
+  local.blobs.set(`${graph}:${record.sha256}`, bytes);
+  return record;
+}
+test('encrypted originals authenticate vault, bytes, content hash, and size', () => {
+  const bytes = Buffer.from('Private synthetic original'),
+    key = randomBytes(32);
+  const encrypted = sealOriginal(bytes, key, 'vault-a:original');
+  assert.equal(encrypted.includes(bytes), false);
+  assert.deepEqual(
+    unsealOriginal(encrypted, key, 'vault-a:original', hashBytes(bytes), bytes.length),
+    bytes,
+  );
+  assert.throws(() =>
+    unsealOriginal(encrypted, key, 'vault-b:original', hashBytes(bytes), bytes.length),
+  );
+  assert.throws(() =>
+    unsealOriginal(encrypted, key, 'vault-a:original', 'a'.repeat(64), bytes.length),
+  );
+  assert.throws(() =>
+    unsealOriginal(encrypted, key, 'vault-a:original', hashBytes(bytes), bytes.length + 1),
+  );
+  encrypted[30] ^= 1;
+  assert.throws(() =>
+    unsealOriginal(encrypted, key, 'vault-a:original', hashBytes(bytes), bytes.length),
+  );
+});
+test('originals upload before snapshots, deduplicate across graphs, and download on demand', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive);
+  const record = attach(a.local),
+    child = 'c'.repeat(32);
+  attach(a.local, undefined, child, 'b'.repeat(32));
+  a.local.snapshot.graphs.main.annotations.highlight = {
+    id: 'highlight',
+    document_id: record.id,
+    page: 1,
+    quote: '12 percent',
+    comment: 'Useful finding',
+  };
+  const key = await a.engine.createVault();
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'synced');
+  const originals = drive.files.filter((f) => f.appProperties.orbisKind === 'original');
+  assert.equal(originals.length, 1);
+  assert.ok(
+    drive.files.indexOf(originals[0]) <
+      drive.files.findIndex((f) => f.appProperties.orbisKind === 'commit'),
+  );
+  const b = await device(t, drive);
+  await b.engine.unlock(drive.files[0].id, key);
+  await b.engine.sync();
+  assert.deepEqual(b.local.snapshot, a.local.snapshot);
+  assert.equal(b.local.blobs.size, 0);
+  assert.equal(b.local.states.main[record.sha256].transfer_status, 'available_on_drive');
+  await Promise.all([
+    b.engine.downloadOriginal('main', record),
+    b.engine.downloadOriginal('main', record),
+  ]);
+  assert.equal(b.local.writes, 1);
+  assert.deepEqual(
+    b.local.blobs.get(`main:${record.sha256}`),
+    a.local.blobs.get(`main:${record.sha256}`),
+  );
+  assert.equal(b.local.states.main[record.sha256].remote_available, true);
+  assert.equal(b.local.blobs.has(`${child}:${record.sha256}`), false);
+  await b.engine.sync();
+  assert.equal(
+    drive.files.filter((f) => f.appProperties.orbisKind === 'original').length,
+    1,
+  );
+});
+test('legacy snapshots merge with attachment snapshots without deleting newer records', () => {
+  const base = empty(),
+    local = { snapshot: structuredClone(base), blobs: new Map() };
+  const record = attach(local);
+  const other = structuredClone(base);
+  other.graphs.main.notes['other.md'] = 'An offline note from the older schema';
+  const merged = mergeCommits([
+    root(base),
+    { id: 'b', parents: ['a'], snapshot: local.snapshot },
+    { id: 'c', parents: ['a'], snapshot: other },
+  ]);
+  assert.equal(merged.conflicts.length, 0);
+  assert.equal(merged.snapshot.version, 2);
+  assert.equal(merged.snapshot.graphs.main.documents[record.id].sha256, record.sha256);
+  assert.equal(
+    merged.snapshot.graphs.main.notes['other.md'],
+    other.graphs.main.notes['other.md'],
+  );
+  assert.equal(snapshotsEqual(base, normalizedSnapshot(base)), true);
+});
+test('quota and interrupted uploads preserve originals, back off, and retry after restart', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  await a.engine.createVault();
+  drive.quota = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'error');
+  assert.match(a.engine.status.message, /quota/);
+  assert.equal(
+    drive.files.some((f) => f.appProperties.orbisKind === 'commit'),
+    false,
+  );
+  assert.equal(a.local.blobs.size, 1);
+  assert.equal(a.local.states.main[record.sha256].transfer_status, 'error');
+  const lists = drive.lists;
+  await a.engine.sync({}, null, true);
+  assert.equal(drive.lists, lists);
+  drive.quota = false;
+  drive.loseUploadResponse = true;
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'error');
+  assert.equal(
+    drive.files.filter((f) => f.appProperties.orbisKind === 'original').length,
+    1,
+  );
+  a.engine = new SyncEngine({ ...a.engine });
+  assert.match(a.engine.status.message, /interrupted/);
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'synced');
+  assert.equal(
+    drive.files.filter((f) => f.appProperties.orbisKind === 'original').length,
+    1,
+  );
+  assert.equal(a.engine.state.nextRetry, null);
+});
+test('offline pinned originals download after reconnect and corrupt remote bytes cannot replace a cache', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  const key = await a.engine.createVault();
+  await a.engine.sync();
+  const b = await device(t, drive);
+  await b.engine.unlock(drive.files[0].id, key);
+  await b.engine.sync();
+  b.local.states.main[record.sha256].keep_offline = true;
+  drive.offline = true;
+  await b.engine.sync();
+  assert.equal(b.engine.status.phase, 'error');
+  assert.equal(b.local.blobs.size, 0);
+  drive.offline = false;
+  await b.engine.sync();
+  assert.equal(b.local.blobs.size, 1);
+  const original = drive.files.find((f) => f.appProperties.orbisKind === 'original'),
+    preserved = b.local.blobs.get(`main:${record.sha256}`);
+  original.bytes = Buffer.from(original.bytes);
+  original.bytes[30] ^= 1;
+  await assert.rejects(b.engine.downloadOriginal('main', record));
+  assert.deepEqual(b.local.blobs.get(`main:${record.sha256}`), preserved);
+  await assert.rejects(b.engine.confirmRemoteOriginal('main', record));
+  assert.equal(b.local.states.main[record.sha256].remote_available, false);
+  await b.engine.sync();
+  assert.equal(b.engine.status.phase, 'synced');
+  assert.equal(
+    drive.files.filter((f) => f.appProperties.orbisKind === 'original').length,
+    2,
+  );
+  await b.engine.confirmRemoteOriginal('main', record);
+  assert.equal(b.local.states.main[record.sha256].remote_available, true);
+  drive.downloads = [];
+  await b.engine.sync();
+  assert.equal(b.engine.status.phase, 'synced');
+  assert.equal(
+    drive.downloads.filter(
+      (id) =>
+        drive.files.find((file) => file.id === id).appProperties.orbisKind === 'original',
+    ).length,
+    0,
+  );
+});
+test('a missing original blocks syncing and safe cache removal without losing metadata', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  await a.engine.createVault();
+  a.local.blobs.clear();
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'error');
+  assert.match(a.engine.status.message, /no local or Drive copy/);
+  await assert.rejects(
+    a.engine.confirmRemoteOriginal('main', record),
+    /missing from Drive/,
+  );
+  assert.equal(a.local.snapshot.graphs.main.documents[record.id].sha256, record.sha256);
+});
+test('failed remote-only downloads stay failed until the remote original is repaired', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  const key = await a.engine.createVault();
+  await a.engine.sync();
+  const b = await device(t, drive);
+  await b.engine.unlock(drive.files[0].id, key);
+  await b.engine.sync();
+  const original = drive.files.find((f) => f.appProperties.orbisKind === 'original');
+  const valid = Buffer.from(original.bytes);
+  original.bytes = Buffer.from(original.bytes);
+  original.bytes[30] ^= 1;
+  await assert.rejects(b.engine.downloadOriginal('main', record));
+  await b.engine.sync();
+  assert.equal(b.engine.status.phase, 'error');
+  assert.equal(b.local.states.main[record.sha256].transfer_status, 'error');
+  assert.equal(b.local.blobs.size, 0);
+  original.bytes = valid;
+  await b.engine.sync();
+  assert.equal(b.engine.status.phase, 'synced');
+  await b.engine.downloadOriginal('main', record);
+  assert.equal(b.local.states.main[record.sha256].transfer_status, 'downloaded');
+});
+test('a damaged pinned cache is replaced from the verified Drive original', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  await a.engine.createVault();
+  await a.engine.sync();
+  a.local.states.main[record.sha256].keep_offline = true;
+  a.local.blobs.set(`main:${record.sha256}`, Buffer.from('corrupted local cache'));
+  await a.engine.sync();
+  assert.equal(a.engine.status.phase, 'synced');
+  assert.equal(a.local.writes, 1);
+  assert.equal(hashBytes(a.local.blobs.get(`main:${record.sha256}`)), record.sha256);
+});
+test('failed transfer initialization is retryable and cannot leave a stuck download', async (t) => {
+  const drive = new FakeDrive(),
+    a = await device(t, drive),
+    record = attach(a.local);
+  await a.engine.createVault();
+  await a.engine.sync();
+  const setState = a.engine.backend.originalState;
+  let fail = true;
+  a.engine.backend.originalState = async (...args) => {
+    if (fail) {
+      fail = false;
+      throw new Error('Local service restarted');
+    }
+    return setState(...args);
+  };
+  await assert.rejects(a.engine.downloadOriginal('main', record), /restarted/);
+  assert.equal(a.engine.downloads.size, 0);
+  await a.engine.downloadOriginal('main', record);
+  assert.equal(a.engine.downloads.size, 0);
 });
 test('conflicting notes stay intact until explicit resolution reaches both devices', async (t) => {
   const drive = new FakeDrive(),

@@ -1,6 +1,6 @@
 {
   "name": "orbis",
-  "version": "2.0.0",
+  "version": "2.1.0-beta.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,19 +13,20 @@
     "typecheck": "tsc -b --pretty false",
     "test": "npm run test:unit && npm run test:python",
     "test:unit": "vitest run",
-    "test:python": "python3 -m unittest discover -s tests -p 'test_*.py'",
+    "test:python": "uv run --locked --python 3.12 python -m unittest discover -s tests -p 'test_*.py'",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build && python3 tools/build_data_js.py --check",
     "desktop:dev": "npm run build && electron .",
-    "desktop:backend": "python3 scripts/build_desktop_backend.py",
+    "desktop:backend": "uv run --locked --python 3.12 --with pyinstaller==6.22.3 python scripts/build_desktop_backend.py",
     "desktop:build": "npm run build && npm run desktop:backend && electron-builder",
     "test:desktop": "node --test desktop/tests/*.test.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^0.468.0",
+    "pdfjs-dist": "^6.5.438",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-force-graph-3d": "^1.27.0",
@@ -65,8 +66,9 @@
     "vitest": "^4.1.10"
   },
   "main": "desktop/main.mjs",
-  "description": "Orbis — a personal research universe",
+  "description": "Orbis \u2014 a personal research universe",
   "author": "Orbis contributors",
+  "homepage": "https://github.com/Nike353/Orbis",
   "build": {
     "appId": "org.orbis.research",
     "productName": "Orbis",

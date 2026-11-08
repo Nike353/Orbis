@@ -3,6 +3,7 @@ import { ImportQueue } from './panels/ImportQueue';
 import { LibraryPanel } from './panels/LibraryPanel';
 import { ReviewPanel } from './panels/ReviewPanel';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import { ActivityPanel } from './panels/ActivityPanel';
 
 export function SidePanel() {
   const activeTab = useWorkspaceStore((state) => state.activeTab);
@@ -13,6 +14,7 @@ export function SidePanel() {
       {activeTab === 'review' && <ReviewPanel />}
       {activeTab === 'filters' && <FiltersPanel />}
       {activeTab === 'imports' && <ImportQueue />}
+      {activeTab === 'activity' && <ActivityPanel />}
     </aside>
   );
 }

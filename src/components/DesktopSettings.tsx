@@ -31,8 +31,16 @@ declare global {
       sync(choices?: Record<string, string>, heads?: string[]): Promise<DesktopStatus>;
       importLibrary(): Promise<void>;
       openLibrary(): Promise<void>;
+      getPreferences(): Promise<Record<string, string>>;
+      setPreference(key: string, value: string | null): Promise<void>;
       openGraph(id: string): Promise<void>;
+      downloadDocument(id: string): Promise<void>;
+      openDocument(id: string): Promise<void>;
+      removeDocument(id: string): Promise<void>;
       onLibraryChanged(callback: () => void): () => void;
+      onDocumentsChanged(callback: () => void): () => void;
+      onWindowVisibility(callback: (visible: boolean) => void): () => void;
+      onBeforeClose(callback: () => Promise<void>): () => void;
     };
   }
 }
@@ -86,6 +94,7 @@ export function DesktopSettings() {
       <button
         className="button secondary desktop-sync-button"
         aria-label="Google Drive sync settings"
+        title={label}
         onClick={() => setOpen(true)}
       >
         <Cloud size={16} />
@@ -118,7 +127,7 @@ export function DesktopSettings() {
             </header>
             <p>
               Your library lives on this computer. Connect Google Drive to sync graphs,
-              paper notes, and conversations between your devices.
+              originals, highlights, paper notes, and conversations between your devices.
             </p>
             <div className="desktop-status" role="status">
               <strong>{label}</strong>
@@ -337,8 +346,8 @@ export function DesktopSettings() {
             </div>
             <small>
               Sync runs every 30 seconds while Orbis is open. Offline changes stay on this
-              device until you reconnect. This preview syncs your existing records and
-              notes; PDF caching is a separate upcoming feature.
+              device until you reconnect. Originals use encrypted Drive storage and download
+              when opened; Keep offline retains a copy on this device.
             </small>
           </section>
         </div>

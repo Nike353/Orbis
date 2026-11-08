@@ -9,13 +9,17 @@ import {
   Menu,
 } from 'electron';
 import { spawn } from 'node:child_process';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, chmod, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { atomic, SyncEngine } from './sync-engine.mjs';
+import { hashBytes } from './sync-core.mjs';
 import { Drive, authorize, validateClient } from './google-drive.mjs';
 import { agentEnvironment } from './agent-environment.mjs';
+import { stopBackend } from './backend-lifecycle.mjs';
+import { readLibraryImport, copyImportOriginals } from './library-import.mjs';
+import { readUiPreferences, writeUiPreference } from './ui-preferences.mjs';
 import {
   LEGACY_APP_NAME,
   TRANSFER_FLAG,
@@ -51,8 +55,13 @@ let state = { device: randomUUID() },
   loggingIn = false;
 let vaults = [],
   startupError = '',
-  shuttingDown = false;
+  shuttingDown = false,
+  closing = false,
+  backendStopping,
+  changingLibrary = false,
+  closeTimer;
 const origins = new Set(),
+  graphOrigins = new Map(),
   token = randomBytes(32).toString('hex');
 
 function storageReady() {
@@ -69,8 +78,8 @@ async function save() {
   storageReady();
   await atomic(secretPath, safeStorage.encryptString(JSON.stringify(state)));
 }
-async function request(route, body) {
-  const r = await fetch(base + route, {
+async function request(route, body, origin = base) {
+  const r = await fetch(origin + route, {
     method: body ? 'POST' : 'GET',
     signal: AbortSignal.timeout(30000),
     headers: {
@@ -83,6 +92,29 @@ async function request(route, body) {
   if (!r.ok) throw new Error(result.error || 'Local library is unavailable');
   return result;
 }
+async function originalBytes(graph, sha, content) {
+  const response = await fetch(`${base}/api/desktop/documents/${graph}/${sha}/blob`, {
+    method: content ? 'POST' : 'GET',
+    headers: { 'X-Orbis-Desktop': token },
+    signal: AbortSignal.timeout(60000),
+    ...(content ? { body: content } : {}),
+  });
+  if (!response.ok)
+    throw new Error((await response.json()).error || 'Original is unavailable');
+  return content ? response.json() : Buffer.from(await response.arrayBuffer());
+}
+async function currentOriginal(id) {
+  if (typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id))
+    throw new Error('Invalid original');
+  const origin = new URL(window.webContents.getURL()).origin,
+    graph = graphOrigins.get(origin);
+  if (!graph) throw new Error('Open a graph before using an original');
+  return {
+    graph,
+    origin,
+    record: await request(`/api/documents/${id}`, undefined, origin),
+  };
+}
 function makeEngine() {
   engine = new SyncEngine({
     drive:
@@ -93,6 +125,13 @@ function makeEngine() {
     backend: {
       get: () => request('/api/desktop/snapshot'),
       apply: (snapshot, expected) => request('/api/desktop/apply', { snapshot, expected }),
+      originals: () => request('/api/desktop/documents'),
+      readOriginal: (graph, sha) => originalBytes(graph, sha),
+      writeOriginal: (graph, sha, bytes) => originalBytes(graph, sha, bytes),
+      originalState: async (graph, sha, update) => {
+        await request(`/api/desktop/documents/${graph}/${sha}/state`, update);
+        window?.webContents.send('orbis:documentsChanged');
+      },
     },
     changed: () => window?.webContents.send('orbis:libraryChanged'),
   });
@@ -165,6 +204,7 @@ async function startBackend() {
     });
   });
   origins.add(base);
+  graphOrigins.set(base, 'main');
 }
 
 function handle(name, action) {
@@ -178,6 +218,28 @@ function handle(name, action) {
       throw new Error('Untrusted desktop request');
     return action(...args);
   });
+}
+function requestClose() {
+  if (closing || shuttingDown) return;
+  closing = true;
+  window.webContents.send('orbis:beforeClose');
+  closeTimer = setTimeout(() => {
+    closing = false;
+    dialog.showErrorBox(
+      'Orbis kept your window open',
+      'Draft saving did not finish. Check the local service and try closing again.',
+    );
+  }, 15000);
+}
+async function changeLibraryView(action) {
+  if (changingLibrary)
+    throw new Error('Wait for the current graph or library to finish opening.');
+  changingLibrary = true;
+  try {
+    return await action();
+  } finally {
+    changingLibrary = false;
+  }
 }
 async function main() {
   await app.whenReady();
@@ -253,6 +315,32 @@ async function main() {
       webSecurity: true,
     },
   });
+  const publishVisibility = (visible) => {
+    if (window && !window.isDestroyed())
+      window.webContents.send('orbis:windowVisibility', visible);
+  };
+  // Visibility getters can lag the restore event on Linux.
+  for (const [event, visible] of [
+    ['minimize', false],
+    ['restore', true],
+    ['hide', false],
+    ['show', true],
+  ])
+    window.on(event, () => publishVisibility(visible));
+  window.webContents.on('did-finish-load', () => {
+    if (window && !window.isDestroyed())
+      publishVisibility(window.isVisible() && !window.isMinimized());
+  });
+  window.on('close', (event) => {
+    if (!shuttingDown) {
+      event.preventDefault();
+      requestClose();
+    }
+  });
+  window.on('closed', () => {
+    window = null;
+    clearTimeout(closeTimer);
+  });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
@@ -282,6 +370,20 @@ async function main() {
     ]),
   );
   handle('status', status);
+  handle('closeReady', (error) => {
+    if (!closing) throw new Error('No close request is pending');
+    clearTimeout(closeTimer);
+    closing = false;
+    if (error) {
+      dialog.showErrorBox(
+        'Your drafts need attention',
+        `Orbis kept this window open because a draft could not be saved. ${String(error).slice(0, 1500)}`,
+      );
+      return;
+    }
+    shuttingDown = true;
+    app.quit();
+  });
   handle('configureGoogle', async () => {
     if (state.credentials)
       throw new Error('Disconnect Google before changing the OAuth client.');
@@ -324,7 +426,7 @@ async function main() {
     return status();
   });
   handle('disconnect', async () => {
-    if (engine.busy || loggingIn)
+    if (engine.busy || loggingIn || engine.downloads.size)
       throw new Error('Wait for the current sync or sign-in to finish.');
     delete state.credentials;
     await save();
@@ -364,40 +466,84 @@ async function main() {
     return status();
   });
   handle('openLibrary', () => shell.openPath(library));
-  handle('openGraph', async (id) => {
-    if (typeof id !== 'string' || !/^(main|[a-f0-9]{32})$/.test(id))
-      throw new Error('Invalid graph');
-    const result = await request(`/api/graphs/${id}/open`, {}),
-      url = new URL(result.url);
-    if (url.hostname !== '127.0.0.1' || url.protocol !== 'http:')
-      throw new Error('Invalid graph URL');
-    origins.add(url.origin);
-    await window.loadURL(result.url);
+  handle('getPreferences', () => readUiPreferences(profile));
+  handle('setPreference', (key, value) => writeUiPreference(profile, key, value));
+  handle('downloadDocument', async (id) => {
+    const { graph, record } = await currentOriginal(id);
+    await engine.downloadOriginal(graph, record);
   });
-  handle('importLibrary', async () => {
-    if (engine.busy || state.vault)
-      throw new Error('Import before connecting a synced library.');
-    const local = await request('/api/desktop/snapshot');
-    if (
-      Object.values(local.snapshot.graphs).some(
-        (g) =>
-          Object.keys(g.nodes).length ||
-          Object.keys(g.sessions).length ||
-          Object.keys(g.notes).length,
-      )
-    )
-      throw new Error(
-        'Import is available only for an empty app library. Your existing data will not be replaced.',
-      );
-    const picked = await dialog.showOpenDialog(window, {
-      title: 'Choose existing Orbis library folder',
-      properties: ['openDirectory'],
+  handle('openDocument', async (id) => {
+    const { graph, record } = await currentOriginal(id);
+    if (!record.available) await engine.downloadOriginal(graph, record);
+    const bytes = await originalBytes(graph, record.sha256);
+    if (hashBytes(bytes) !== record.sha256)
+      throw new Error('Original failed its integrity check');
+    const file = path.join(
+      profile,
+      'OpenedOriginals',
+      `${record.sha256}.${record.media_type === 'application/pdf' ? 'pdf' : 'txt'}`,
+    );
+    await atomic(file, bytes);
+    await chmod(file, 0o400);
+    const error = await shell.openPath(file);
+    if (error) throw new Error(error);
+  });
+  handle('removeDocument', async (id) => {
+    const { graph, origin, record } = await currentOriginal(id);
+    await engine.confirmRemoteOriginal(graph, record);
+    await request(`/api/documents/${id}/local`, { action: 'remove_download' }, origin);
+    await unlink(
+      path.join(
+        profile,
+        'OpenedOriginals',
+        `${record.sha256}.${record.media_type === 'application/pdf' ? 'pdf' : 'txt'}`,
+      ),
+    ).catch((error) => {
+      if (error.code !== 'ENOENT') throw error;
     });
-    if (picked.canceled) return;
-    const imported = await readImport(picked.filePaths[0]);
-    await request('/api/desktop/apply', { snapshot: imported, expected: local.digest });
-    window.webContents.send('orbis:libraryChanged');
   });
+  handle('openGraph', (id) =>
+    changeLibraryView(async () => {
+      if (typeof id !== 'string' || !/^(main|[a-f0-9]{32})$/.test(id))
+        throw new Error('Invalid graph');
+      const result = await request(`/api/graphs/${id}/open`, {}),
+        url = new URL(result.url);
+      if (url.hostname !== '127.0.0.1' || url.protocol !== 'http:')
+        throw new Error('Invalid graph URL');
+      origins.add(url.origin);
+      graphOrigins.set(url.origin, id);
+      await window.loadURL(result.url);
+    }),
+  );
+  handle('importLibrary', () =>
+    changeLibraryView(async () => {
+      if (graphOrigins.get(new URL(window.webContents.getURL()).origin) !== 'main')
+        throw new Error('Open your Main graph before importing a library.');
+      if (engine.busy || state.vault)
+        throw new Error('Import before connecting a synced library.');
+      const local = await request('/api/desktop/snapshot');
+      if (
+        Object.values(local.snapshot.graphs).some(
+          (g) =>
+            Object.keys(g.nodes).length ||
+            Object.keys(g.sessions).length ||
+            Object.keys(g.notes).length,
+        )
+      )
+        throw new Error(
+          'Import is available only for an empty app library. Your existing data will not be replaced.',
+        );
+      const picked = await dialog.showOpenDialog(window, {
+        title: 'Choose existing Orbis library folder',
+        properties: ['openDirectory'],
+      });
+      if (picked.canceled) return;
+      const imported = await readLibraryImport(picked.filePaths[0]);
+      await copyImportOriginals(picked.filePaths[0], library, imported);
+      await request('/api/desktop/apply', { snapshot: imported, expected: local.digest });
+      window.webContents.send('orbis:libraryChanged');
+    }),
+  );
   await window.loadURL(base);
   if (state.credentials) {
     engine
@@ -411,63 +557,27 @@ async function main() {
     void engine.sync();
   }
   interval = setInterval(() => {
-    if (!loggingIn) void engine.sync();
+    if (!loggingIn) void engine.sync({}, null, true);
   }, 30000);
 }
 
-async function readImport(root) {
-  const json = async (file) => JSON.parse(await readFile(path.join(root, file), 'utf8'));
-  let catalog = [];
-  try {
-    catalog = await json('data/graphs.json');
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw e;
+app.on('before-quit', (event) => {
+  if (window && !shuttingDown) {
+    event.preventDefault();
+    requestClose();
+    return;
   }
-  if (!Array.isArray(catalog) || catalog.length > 100)
-    throw new Error('Invalid library catalog');
-  const graphs = {};
-  for (const entry of [{ id: 'main' }, ...catalog]) {
-    if (!/^(main|[a-f0-9]{32})$/.test(entry.id)) throw new Error('Invalid library graph');
-    const prefix = entry.id === 'main' ? '' : `graphs/${entry.id}/`,
-      graph = await json(`${prefix}data/graph.json`);
-    const { revision: _r, updated_at: _u, ...meta } = graph.meta;
-    const notes = {};
-    const { readdir, lstat } = await import('node:fs/promises');
-    for (const name of await readdir(path.join(root, prefix, 'papers')))
-      if (/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.md$/.test(name)) {
-        const file = path.join(root, prefix, 'papers', name),
-          stat = await lstat(file);
-        if (stat.isSymbolicLink() || stat.size > 250000)
-          throw new Error('Invalid paper note in import');
-        notes[name] = await readFile(file, 'utf8');
-      }
-    let sessions = [];
-    try {
-      sessions = (await json(`${prefix}data/research.json`)).sessions || [];
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e;
-    }
-    if (sessions.some((s) => s.turns.some((t) => t.status === 'running')))
-      throw new Error('Stop running agents before importing this library.');
-    graphs[entry.id] = {
-      name: entry.name || meta.title,
-      meta,
-      notes,
-      nodes: Object.fromEntries(graph.nodes.map((n) => [n.id, n])),
-      edges: Object.fromEntries(graph.edges.map((e) => [e.id, e])),
-      sessions: Object.fromEntries(sessions.map((s) => [s.id, s])),
-    };
-  }
-  return { version: 1, graphs };
-}
-app.on('before-quit', () => {
   shuttingDown = true;
   clearInterval(interval);
-  backend?.kill('SIGINT');
+  if (backend?.pid && backend.exitCode === null && backend.signalCode == null) {
+    event.preventDefault();
+    backendStopping ??= stopBackend(backend).then(() => app.quit());
+  }
 });
 app.on('window-all-closed', () => app.quit());
 const launch = transferring ? serveLegacyProfile({ app, safeStorage, legacyHome }) : main();
 launch.catch((error) => {
   dialog.showErrorBox('Orbis could not start', error.message);
+  shuttingDown = true;
   app.quit();
 });

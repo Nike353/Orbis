@@ -16,6 +16,9 @@ function resetStore() {
     migratedFrom: null,
     draftAvailable: false,
     selection: null,
+    paperWorkspace: null,
+    researchScope: [],
+    researchSessionId: null,
     activeTab: 'library',
     graphView: 'universe',
     filters: {
@@ -121,6 +124,27 @@ describe('workspace store', () => {
     expect(after.graphView).toBe('lineages');
     expect(after.graph).toBe(before.graph);
     expect(after.filters).toBe(before.filters);
+  });
+
+  it('opens and closes a paper without changing galaxy data, filters, or view', () => {
+    const before = useWorkspaceStore.getState();
+    const paperId = graph.nodes.find((node) => node.type === 'paper')!.id;
+    before.openPaper(paperId, 'original-id', 3, 'Discuss');
+    const opened = useWorkspaceStore.getState();
+    expect(opened.paperWorkspace).toMatchObject({
+      nodeId: paperId,
+      documentId: 'original-id',
+      page: 3,
+      tab: 'Discuss',
+    });
+    expect(opened.graph).toBe(before.graph);
+    expect(opened.filters).toBe(before.filters);
+    expect(opened.graphView).toBe(before.graphView);
+    opened.closePaper();
+    expect(useWorkspaceStore.getState().paperWorkspace).toBeNull();
+    expect(useWorkspaceStore.getState().dirty).toBe(false);
+    useWorkspaceStore.getState().openPaper('paper:missing');
+    expect(useWorkspaceStore.getState().paperWorkspace).toBeNull();
   });
 
   it('saves the next revision and clears dirty draft state', async () => {

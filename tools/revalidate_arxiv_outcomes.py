@@ -20,6 +20,8 @@ try:
         stream_agent_events,
         utc_now,
         validate_full_text_source,
+        agent_environment,
+        stop_agent,
     )
 except ModuleNotFoundError:  # Imported as tools.* by tests.
     from tools.agent_bridge import (
@@ -34,6 +36,8 @@ except ModuleNotFoundError:  # Imported as tools.* by tests.
         stream_agent_events,
         utc_now,
         validate_full_text_source,
+        agent_environment,
+        stop_agent,
     )
 
 
@@ -81,6 +85,8 @@ def run_revalidation(record, prior, agent_id, agent_label, verbose=False):
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=agent_environment(),
+                start_new_session=True,
             )
         except OSError as exc:
             return None, f"could not launch {agent_label}: {exc}"
@@ -95,7 +101,7 @@ def run_revalidation(record, prior, agent_id, agent_label, verbose=False):
 
         def kill_for_timeout():
             timed_out.set()
-            proc.kill()
+            stop_agent(proc)
 
         stderr_thread = threading.Thread(
             target=drain_stderr, daemon=True)
@@ -120,13 +126,13 @@ def run_revalidation(record, prior, agent_id, agent_label, verbose=False):
             code = proc.wait()
             stderr_thread.join(timeout=5)
         except KeyboardInterrupt:
-            proc.kill()
+            stop_agent(proc)
             proc.wait()
             raise
         finally:
             killer.cancel()
-            if proc.poll() is None:
-                proc.kill()
+            stop_agent(proc)
+            proc.wait()
 
         if timed_out.is_set():
             return None, f"{agent_label} exceeded the 30-minute limit"

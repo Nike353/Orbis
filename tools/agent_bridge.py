@@ -3,10 +3,13 @@
 
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
 import shutil
+import signal
+import subprocess
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -132,19 +135,22 @@ def _command_parts(command):
 
 try:
     from agent_settings import model_catalog, normalize_settings, settings_arguments
+    from agent_discovery import agent_profile, agent_environment
 except ModuleNotFoundError:
     from tools.agent_settings import model_catalog, normalize_settings, settings_arguments
+    from tools.agent_discovery import agent_profile, agent_environment
 
 
 def agent_catalog():
     result = []
     for agent in _agent_definitions():
         parts = _command_parts(agent["command"])
+        profile = agent_profile(agent["id"], parts)
         result.append({
             "id": agent["id"],
             "label": agent["label"],
             "available": bool(parts and shutil.which(parts[0])),
-            "models": model_catalog(agent["id"]),
+            **{k: v for k, v in profile.items() if k not in ('startup_arguments', 'supports_effort')},
         })
     return result
 
@@ -886,6 +892,11 @@ class IsolatedInsertion:
         return errors
 
     def apply(self):
+        try:
+            from workspace import ensure_library_writable
+        except ModuleNotFoundError:
+            from tools.workspace import ensure_library_writable
+        ensure_library_writable(self.repository_root)
         if self.graph_path.read_bytes() != self.graph_bytes:
             raise StaleGraphError(
                 "graph.json changed while the agent was processing")
@@ -1108,6 +1119,7 @@ def build_agent_command(
             'approval_policy="never"',
             "-c",
             "sandbox_workspace_write.network_access=true",
+            *codex_tool_restrictions(executable),
             "--output-schema",
             str(schema_path),
             "--color",
@@ -1127,10 +1139,12 @@ def build_agent_command(
     return [
         *executable,
         *overrides,
-        "--safe-mode",
-        "--restricted",
+        *agent_profile(agent_id, executable).get('startup_arguments', []),
         "--no-session-persistence",
         "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
         "-p",
         prompt,
         "--output-format",
@@ -1147,6 +1161,39 @@ def build_agent_command(
         "--max-turns",
         str(max_turns),
     ]
+
+def codex_tool_restrictions(command, read_only=False):
+    """Disable inherited integrations; source Q&A also has no execution tools."""
+    restrictions = ["-c", "features.plugins=false", "-c", "features.apps=false",
+                    "-c", "features.multi_agent=false"]
+    try:
+        # Enumerate the same configuration the run will use. Plugin servers
+        # disappear when plugins are disabled; adding top-level overrides for
+        # them would create incomplete server definitions with no transport.
+        configured = subprocess.run([*command, *restrictions, "mcp", "list", "--json"],
+                                    env=agent_environment(), stdin=subprocess.DEVNULL,
+                                    capture_output=True, text=True, timeout=10, check=True)
+        servers = json.loads(configured.stdout)
+        if not isinstance(servers, list) or any(not isinstance(s, dict) or not isinstance(s.get("name"), str)
+                                                or not re.fullmatch(r"[A-Za-z0-9_-]+", s["name"])
+                                                for s in servers):
+            raise ValueError("unexpected MCP configuration")
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        raise BridgeContractError("Cannot restrict Codex tools. Check that your installed CLI supports 'mcp list --json'.") from exc
+    if read_only:
+        restrictions += ["-c", "features.shell_tool=false", "-c", "features.unified_exec=false",
+                         "-c", 'web_search="disabled"']
+    for server in servers:
+        # CLI override paths are dot-split; quotes would become part of the server name.
+        restrictions += ["-c", "mcp_servers." + server["name"] + ".enabled=false"]
+    return restrictions
+
+
+def stop_agent(proc):
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def _parse_json_text(value):
@@ -1256,14 +1303,22 @@ def stream_agent_events(proc, agent_id, emit):
         "webfetch_urls": [],
     }
     emitted_tools = set()
+    output_size = 0
+    lines = (iter(lambda: proc.stdout.readline(1024 * 1024 + 1), "")
+             if hasattr(proc.stdout, "readline") else proc.stdout)
 
-    for raw in proc.stdout:
+    for raw in lines:
+        output_size += len(raw.encode("utf-8"))
+        if len(raw) > 1024 * 1024 or output_size > 8 * 1024 * 1024:
+            raise BridgeContractError("Agent output exceeded its size limit.")
         raw = raw.strip()
         if not raw:
             continue
         try:
             event = json.loads(raw)
         except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict):
             continue
 
         event_type = str(event.get("type", ""))
@@ -1275,10 +1330,15 @@ def stream_agent_events(proc, agent_id, emit):
                     "text": f"Isolated {agent['label']} session started",
                 })
             elif event_type == "assistant":
-                for block in (event.get("message") or {}).get("content") or []:
+                message = event.get("message")
+                content = message.get("content") if isinstance(message, dict) else []
+                for block in content if isinstance(content, list) else []:
+                    if not isinstance(block, dict):
+                        continue
                     if block.get("type") == "tool_use":
                         name = block.get("name", "?")
-                        tool_input = block.get("input") or {}
+                        tool_input = block.get("input")
+                        tool_input = tool_input if isinstance(tool_input, dict) else {}
                         if name == "WebFetch":
                             result["webfetch_urls"].extend(
                                 _source_urls(tool_input))
@@ -1295,7 +1355,7 @@ def stream_agent_events(proc, agent_id, emit):
                             )
                             emit(_tool_event(name, detail))
                     elif (block.get("type") == "text"
-                          and block.get("text", "").strip()):
+                          and isinstance(block.get("text"), str) and block["text"].strip()):
                         emit({
                             "type": "event",
                             "kind": "text",
@@ -1304,13 +1364,15 @@ def stream_agent_events(proc, agent_id, emit):
             elif event_type == "result":
                 result["ok"] = not event.get("is_error", False)
                 result["summary"] = str(event.get("result", ""))[:4000]
-                result["structured_output"] = (
+                output = (
                     event.get("structured_output")
                     or _find_outcome(event.get("result")))
-                result["cost_usd"] = event.get("total_cost_usd")
+                result["structured_output"] = output if isinstance(output, dict) else None
+                cost = event.get("total_cost_usd")
+                result["cost_usd"] = cost if type(cost) in (int, float) and math.isfinite(cost) and cost >= 0 else None
                 duration_ms = event.get("duration_ms")
                 result["duration_s"] = (
-                    round(duration_ms / 1000) if duration_ms else None)
+                    round(duration_ms / 1000) if type(duration_ms) in (int, float) and math.isfinite(duration_ms) and duration_ms >= 0 else None)
             continue
 
         if protocol == "codex":
@@ -1321,7 +1383,9 @@ def stream_agent_events(proc, agent_id, emit):
                     "text": "Isolated Codex session started",
                 })
             elif event_type in ("item.started", "item.completed"):
-                item = event.get("item") or {}
+                item = event.get("item")
+                if not isinstance(item, dict):
+                    continue
                 item_type = str(item.get("type", ""))
                 item_id = str(item.get("id", ""))
                 if item_type == "command_execution":
@@ -1333,7 +1397,8 @@ def stream_agent_events(proc, agent_id, emit):
                 elif item_type == "web_search":
                     if event_type == "item.completed":
                         result["webfetch_urls"].extend(_codex_opened_urls(item))
-                        action = item.get("action") or {}
+                        action = item.get("action")
+                        action = action if isinstance(action, dict) else {}
                         action_type = action.get("type", "search")
                         label = {"open_page": "Open page", "find_in_page": "Read page"}.get(action_type, "Web search")
                         emit(_tool_event(label, action.get("url") or item.get("query", "")))

@@ -1,4 +1,4 @@
-import { readPreference } from '../../services/preferences';
+import { readPreference, writePreference } from '../../services/preferences';
 import { AgentModelSettings } from '../AgentModelSettings';
 import { useAgentSettings } from '../../store/agentSettings';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -82,7 +82,10 @@ export function ImportQueue() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentLog, setCurrentLog] = useState<string[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<LocalAgent['id'] | ''>('');
-  const { choice: settings } = useAgentSettings(selectedAgent);
+  const { choice: settings } = useAgentSettings(
+    selectedAgent,
+    health?.agents.find((agent) => agent.id === selectedAgent),
+  );
   const abortRef = useRef<AbortController | null>(null);
   const stopRequestedRef = useRef(false);
 
@@ -174,7 +177,7 @@ export function ImportQueue() {
 
   useEffect(() => {
     if (selectedAgent) {
-      window.localStorage.setItem('orbis.agent', selectedAgent);
+      writePreference('orbis.agent', selectedAgent);
     }
   }, [selectedAgent]);
 

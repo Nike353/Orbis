@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -13,6 +14,7 @@ from tools.agent_bridge import atomic_write_graph, atomic_write_json
 from tools.research import (RESEARCH_SCHEMA, ResearchError, ResearchStore, build_context, graph_changes,
                             paper_note, research_command, validate_result)
 from tools.workspace import initialize_workspace, lock_workspace
+from tools.desktop_sync import snapshot, write_snapshot
 
 APP = Path(__file__).resolve().parent.parent
 
@@ -96,9 +98,54 @@ class ResearchTests(unittest.TestCase):
         stale = self.run_turn(session, "TEST_RENAME")
         modified = copy.deepcopy(after)
         modified["meta"]["revision"] = 2
+        modified["nodes"][1]["notes"] = "A newer authored note"
         atomic_write_graph(self.root, modified)
         with self.assertRaisesRegex(ResearchError, "stale"):
             self.store.decision(session["id"], stale["id"], {"action": "apply", "base_revision": 2})
+
+    def test_imported_proposals_check_portable_content_even_when_local_revisions_collide(self):
+        self.graph["meta"]["revision"] = 1
+        self.graph["edges"] = [{"id": "e1", "source": "paper:a", "target": "paper:b",
+            "relation": "supports", "transition_note": "Portable confidence",
+            "confidence": 1.0, "evidence": "Synthetic evidence",
+            "status": "accepted", "origin": "user", "created_at": "2026-01-01"}]
+        atomic_write_graph(self.root, self.graph)
+        session = self.session()
+        turn = self.run_turn(session, "TEST_RENAME")
+        unchanged = snapshot(self.root)
+        newer = self.store.graph()
+        newer["meta"]["revision"] = 2
+        newer["nodes"][1]["label"] = "Newer author edit"
+        atomic_write_graph(self.root, newer)
+        stale = snapshot(self.root)
+        legacy = copy.deepcopy(unchanged)
+        del legacy["graphs"]["main"]["sessions"][session["id"]]["turns"][0]["base_fingerprint"]
+        for value, valid in ((stale, False), (legacy, False), (unchanged, True)):
+            # Native import and Drive use JavaScript JSON, which turns 1.0 into 1.
+            value = json.loads(subprocess.run(["node", "-e",
+                "process.stdout.write(JSON.stringify(JSON.parse(require('node:fs').readFileSync(0, 'utf8'))))"],
+                input=json.dumps(value), capture_output=True, text=True, check=True).stdout)
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                initialize_workspace(root)
+                if valid:
+                    graph = json.loads((root / "data/graph.json").read_text())
+                    graph["meta"]["revision"] = 17
+                    atomic_write_graph(root, graph)
+                write_snapshot(root, value)
+                restored = ResearchStore(root, threading.Lock(), threading.Lock(), APP)
+                self.assertEqual(restored.view(session["id"])["turns"][0]["proposal_stale"], not valid)
+                before = restored.graph()
+                body = {"action": "apply", "base_revision": before["meta"]["revision"]}
+                if valid:
+                    self.assertNotEqual(before["meta"]["revision"], turn["base_revision"])
+                    restored.decision(session["id"], turn["id"], body)
+                    self.assertEqual(restored.graph()["nodes"][1]["label"], "Reviewed cluster")
+                else:
+                    self.assertEqual(before["meta"]["revision"], turn["base_revision"])
+                    with self.assertRaisesRegex(ResearchError, "stale"):
+                        restored.decision(session["id"], turn["id"], body)
+                    self.assertEqual(restored.graph(), before)
 
     def test_selected_run_settings_are_persisted_and_invalid_settings_do_not_start(self):
         session = self.session()
@@ -160,7 +207,10 @@ class ResearchTests(unittest.TestCase):
         self.store.run_lock.release()
         self.assertEqual(self.store.find(self.store.read(), session["id"], turn["id"])[1]["status"], "cancelled")
         for question in ("TEST_FAIL", "TEST_INVALID"):
-            self.assertEqual(self.run_turn(session, question)["status"], "failed")
+            failed = self.run_turn(session, question)
+            self.assertEqual(failed["status"], "failed")
+            if question == "TEST_FAIL":
+                self.assertIn("Fixture failure", failed["error"])
         self.assertEqual(self.store.graph(), self.graph)
 
     def test_restart_marks_only_unfinished_answers_interrupted(self):

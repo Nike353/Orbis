@@ -7,7 +7,20 @@ export interface LocalAgent {
   id: 'claude' | 'codex';
   label: string;
   available: boolean;
-  models?: { id: string; label: string; efforts: string[] }[];
+  models?: {
+    id: string;
+    label: string;
+    efforts: string[];
+    aliases?: string[];
+    description?: string;
+  }[];
+  default_model?: string;
+  default_model_label?: string;
+  default_effort?: string;
+  default_efforts?: string[];
+  cli_version?: string;
+  model_source?: 'cli' | 'unavailable';
+  model_error?: string;
 }
 
 export interface BridgeHealth {
@@ -21,7 +34,7 @@ export interface BridgeHealth {
 }
 
 export type AgentEvent =
-  | { type: 'start'; url: string; arxiv_id?: string }
+  | { type: 'start'; url: string; arxiv_id?: string; job_id?: string }
   | {
       type: 'event';
       kind: 'tool' | 'text' | 'status';
@@ -104,8 +117,11 @@ export async function runAgentInsertion(
   }
 }
 
-export async function cancelAgentInsertion() {
-  const response = await fetch('/api/insert', { method: 'DELETE' });
+export async function cancelAgentInsertion(jobId?: string) {
+  const response = await fetch(
+    `/api/insert${jobId ? `?job_id=${encodeURIComponent(jobId)}` : ''}`,
+    { method: 'DELETE' },
+  );
   if (!response.ok && response.status !== 409) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `Cancellation returned HTTP ${response.status}`);
