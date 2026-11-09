@@ -10,8 +10,6 @@ own AI agent questions, and explore how ideas connect in a 3D research universe.
 encrypted Google Drive sync connects your laptops, with no Git push/pull routine
 and no always-on Orbis server.
 
-[![Watch the two-minute Orbis demo](docs/images/orbis-demo.jpg)](docs/media/orbis-demo.mp4)
-
 **[Watch the two-minute demo](docs/media/orbis-demo.mp4)**
 
 _The demo uses an existing library. A fresh installation starts empty; no personal
