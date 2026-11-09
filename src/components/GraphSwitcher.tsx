@@ -3,6 +3,7 @@ import { FolderOpen, Plus, X } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
 import { flushPaperDrafts } from '../services/draftLifecycle';
 import { flushDesktopPreferences } from '../services/preferences';
+import { graphUrlWithOnboarding } from '../services/onboarding';
 
 type Library = { id: string; name: string; sources: number; active: boolean };
 async function request(path: string, body?: object) {
@@ -51,7 +52,7 @@ export function GraphSwitcher() {
         return;
       }
       const { url } = await request(`/${id}/open`, {});
-      window.location.assign(url);
+      window.location.assign(graphUrlWithOnboarding(url));
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

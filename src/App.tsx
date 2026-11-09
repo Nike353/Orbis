@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { AppHeader } from './components/AppHeader';
 import { AddPaperDialog } from './components/AddPaperDialog';
 import { AppNav } from './components/AppNav';
@@ -10,14 +10,17 @@ import { ToastRegion } from './components/ToastRegion';
 import { DraftPrompt } from './components/DraftPrompt';
 import { LoadingState, WorkspaceError } from './components/WorkspaceStates';
 import { useWorkspaceStore } from './store/workspaceStore';
-import { flushDesktopPreferences } from './services/preferences';
+import { flushDesktopPreferences, writePreference } from './services/preferences';
 import { ResearchDesk } from './components/ResearchDesk';
 import { DesktopLifecycle } from './components/DesktopSettings';
 import { flushPaperDrafts } from './services/draftLifecycle';
+import { OnboardingTour } from './components/OnboardingTour';
+import { ONBOARDING_KEY, readOnboardingPreference } from './services/onboarding';
 
 const PaperWorkspace = lazy(() => import('./components/PaperWorkspace'));
 
 export function App() {
+  const [tourOpen, setTourOpen] = useState(() => readOnboardingPreference() === null);
   const load = useWorkspaceStore((state) => state.load);
   const loading = useWorkspaceStore((state) => state.loading);
   const error = useWorkspaceStore((state) => state.error);
@@ -28,6 +31,7 @@ export function App() {
   const selection = useWorkspaceStore((state) => state.selection);
   const paperWorkspace = useWorkspaceStore((state) => state.paperWorkspace);
   const addPaperOpen = useWorkspaceStore((state) => state.addPaperOpen);
+  const draftAvailable = useWorkspaceStore((state) => state.draftAvailable);
   const research = activeTab === 'research' || activeTab === 'compare';
   const addPaper = useWorkspaceStore((s) => s.setAddPaperOpen);
 
@@ -80,7 +84,7 @@ export function App() {
   return (
     <div className="app-shell">
       <DesktopLifecycle />
-      <AppHeader />
+      <AppHeader onStartTutorial={() => setTourOpen(true)} />
       <div className="workspace">
         <AppNav />
         <SidePanel />
@@ -110,7 +114,9 @@ export function App() {
           ) : graphView === 'lineages' ? (
             <LineageMap />
           ) : (
-            <GraphScene paused={research || Boolean(paperWorkspace) || addPaperOpen} />
+            <GraphScene
+              paused={research || Boolean(paperWorkspace) || addPaperOpen || tourOpen}
+            />
           )}
         </main>
         {research && (
@@ -134,6 +140,23 @@ export function App() {
       <AddPaperDialog />
       <DraftPrompt />
       <ToastRegion />
+      {tourOpen && !draftAvailable && !addPaperOpen && !paperWorkspace && (
+        <OnboardingTour
+          onFinish={(outcome) => {
+            try {
+              writePreference(ONBOARDING_KEY, outcome);
+            } catch {
+              useWorkspaceStore
+                .getState()
+                .addToast(
+                  'Tutorial closed. Your browser could not remember this preference.',
+                  'warning',
+                );
+            }
+            setTourOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

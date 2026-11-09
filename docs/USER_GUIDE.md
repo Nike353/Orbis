@@ -1,5 +1,14 @@
 # Your personal research workspace
 
+On first launch, a short tutorial highlights the main controls: adding sources,
+reading and notes, discussion, comparison, the universe, and your library settings.
+Use **Next** or **Back**, or **Skip tutorial** (Escape) at any time. Completing or
+skipping it is remembered on this device. Replay it with the **? Tutorial** button
+in the toolbar. The tour does not add sources, change your library, or run agents.
+Desktop dismissal is saved in the app profile across restarts and local port changes;
+browser dismissal is remembered for that browser address and carried along when
+you switch graphs through the app.
+
 Open the desktop app, or start the browser version with `sh start.sh`.
 The launcher keeps your library separate
 from the application. Use `--workspace /path/to/library` to open another library;

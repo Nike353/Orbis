@@ -3,7 +3,7 @@ function previousKey(key: string) {
   return key.replace(/^orbis(?=[:.])/, 'litbench');
 }
 let nativeWrites = Promise.resolve();
-const NATIVE_KEYS = new Set(['orbis.agent', 'orbis.agent-models']);
+const NATIVE_KEYS = new Set(['orbis.agent', 'orbis.agent-models', 'orbis.onboarding']);
 
 export function writePreference(key: string, value: string) {
   localStorage.setItem(key, value);

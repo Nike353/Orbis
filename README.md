@@ -93,6 +93,9 @@ Google sign-in and encrypted sync require the desktop app.
 
 ### Your first paper
 
+A first-launch tour highlights the main controls. Skip it anytime, or replay it
+with the **? Tutorial** button in the toolbar.
+
 1. Install and sign in to **Codex or Claude Code** for AI features, then restart Orbis.
 2. Choose **Add source**, paste a URL, and review the agent's proposal.
 3. Choose **Read**, attach or retrieve the original, and try **My notes** or **Discuss**.

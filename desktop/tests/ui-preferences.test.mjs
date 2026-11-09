@@ -17,6 +17,14 @@ test('agent choices persist in the profile across app ports without storing libr
   );
   assert.equal((await readUiPreferences(profile))['orbis.agent'], 'codex');
   assert.match((await readUiPreferences(profile))['orbis.agent-models'], /fixture-model/);
+  await writeUiPreference(profile, 'orbis.onboarding', 'skipped');
+  assert.equal((await readUiPreferences(profile))['orbis.onboarding'], 'skipped');
+  await writeUiPreference(profile, 'orbis.onboarding', 'completed');
+  assert.equal((await readUiPreferences(profile))['orbis.onboarding'], 'completed');
+  await assert.rejects(
+    writeUiPreference(profile, 'orbis.onboarding', 'unexpected'),
+    /Invalid desktop preference/,
+  );
   await assert.rejects(
     writeUiPreference(profile, 'orbis:v2:draft', 'Private library'),
     /Invalid desktop preference/,

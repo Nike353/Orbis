@@ -1,0 +1,170 @@
+.orbis-tour {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  isolation: isolate;
+}
+.orbis-tour-scrim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.orbis-tour-spotlight {
+  position: absolute;
+  border: 2px solid #a2d6ff;
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 4px rgb(88 159 255 / 18%),
+    0 0 30px rgb(88 159 255 / 24%);
+  pointer-events: none;
+}
+.orbis-tour-card {
+  position: absolute;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  color: var(--ink);
+  background: linear-gradient(145deg, #fff, #f3f6fc);
+  border: 1px solid #d6e1f0;
+  border-radius: 18px;
+  box-shadow: 0 24px 90px rgb(0 0 0 / 35%);
+}
+.orbis-tour-welcome {
+  width: min(560px, calc(100vw - 32px));
+}
+.orbis-tour-card header,
+.orbis-tour-card footer,
+.orbis-tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.orbis-tour-count {
+  color: #52719c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+}
+.orbis-tour-skip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 0 7px 7px;
+  color: #596373;
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+}
+.orbis-tour-icon {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  margin: 20px 0 18px;
+  color: #386fce;
+  background: #e4edfc;
+  border: 1px solid #d0dff5;
+  border-radius: 15px;
+}
+.orbis-tour-card h2 {
+  margin: 0 0 14px;
+  font-size: 26px;
+  line-height: 1.17;
+  letter-spacing: -0.7px;
+  outline: none;
+}
+.orbis-tour-card h2:focus-visible {
+  outline: none;
+}
+.orbis-tour-card p {
+  margin: 0;
+  color: #465266;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.orbis-tour-card .orbis-tour-hint {
+  margin-top: 20px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #5a6d85;
+  background: #eaf0f9;
+  border-radius: 9px;
+}
+.orbis-tour-workflow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 25px;
+}
+.orbis-tour-workflow span {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px 4px;
+  color: #5379ad;
+  background: #fff;
+  border: 1px solid #dce5f1;
+  border-radius: 10px;
+}
+.orbis-tour-workflow small {
+  color: #445772;
+  font-size: 11px;
+}
+.orbis-tour-card footer {
+  margin-top: 25px;
+}
+.orbis-tour-dots {
+  display: flex;
+  gap: 5px;
+}
+.orbis-tour-dots i {
+  width: 5px;
+  height: 5px;
+  background: #c9d4e4;
+  border-radius: 10px;
+}
+.orbis-tour-dots .active {
+  width: 16px;
+  background: #386fce;
+}
+.orbis-tour-content {
+  animation: orbis-tour-enter 160ms ease-out;
+}
+@keyframes orbis-tour-enter {
+  from {
+    opacity: 0.4;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 480px) {
+  .orbis-tour-card {
+    padding: 18px;
+  }
+  .orbis-tour-card h2 {
+    font-size: 23px;
+  }
+  .orbis-tour-card p {
+    font-size: 13px;
+  }
+  .orbis-tour-card footer {
+    flex-wrap: wrap;
+  }
+  .orbis-tour-actions {
+    margin-left: auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbis-tour-content {
+    animation: none;
+  }
+}

@@ -2,9 +2,12 @@ import { lstat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { atomic } from './sync-engine.mjs';
 
-const KEYS = new Set(['orbis.agent', 'orbis.agent-models']);
+const KEYS = new Set(['orbis.agent', 'orbis.agent-models', 'orbis.onboarding']);
 const valid = (key, value) =>
-  KEYS.has(key) && typeof value === 'string' && value.length <= 16000;
+  KEYS.has(key) &&
+  typeof value === 'string' &&
+  value.length <= 16000 &&
+  (key !== 'orbis.onboarding' || ['completed', 'skipped'].includes(value));
 
 export async function readUiPreferences(profile) {
   const file = path.join(profile, 'ui-preferences.json');

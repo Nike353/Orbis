@@ -12,12 +12,13 @@ import {
   RefreshCw,
   Save,
   Search,
+  CircleHelp,
 } from 'lucide-react';
 import { graphStats } from '../domain/graph';
 import { RevisionConflictError } from '../services/graphRepository';
 import { useWorkspaceStore } from '../store/workspaceStore';
 
-export function AppHeader() {
+export function AppHeader({ onStartTutorial }: { onStartTutorial: () => void }) {
   const graph = useWorkspaceStore((state) => state.graph)!;
   const mode = useWorkspaceStore((state) => state.mode);
   const dirty = useWorkspaceStore((state) => state.dirty);
@@ -81,6 +82,14 @@ export function AppHeader() {
       </label>
 
       <div className="header-actions">
+        <button
+          className="header-icon-button"
+          aria-label="Open tutorial"
+          title="Tutorial — how to use Orbis"
+          onClick={onStartTutorial}
+        >
+          <CircleHelp size={17} aria-hidden="true" />
+        </button>
         <DesktopSettings />
         <div className="graph-view-switch" aria-label="Graph view">
           <button
