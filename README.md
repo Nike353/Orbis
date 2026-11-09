@@ -10,10 +10,9 @@ own AI agent questions, and explore how ideas connect in a 3D research universe.
 encrypted Google Drive sync connects your laptops, with no Git push/pull routine
 and no always-on Orbis server.
 
-[![Watch the two-minute Orbis demo](docs/images/orbis-demo.jpg)](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-1080p.mp4)
+[![Watch the two-minute Orbis demo](docs/images/orbis-demo.jpg)](docs/media/orbis-demo.mp4)
 
-**[Watch the two-minute demo](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-1080p.mp4)**
-· [4K version](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-4K.mp4)
+**[Watch the two-minute demo](docs/media/orbis-demo.mp4)**
 
 _The demo uses an existing library. A fresh installation starts empty; no personal
 papers or notes are included in the app._
@@ -72,8 +71,7 @@ agent detection, upgrades, and troubleshooting.
 
 You can also build preview installers using the
 [manual desktop workflow](https://github.com/Nike353/Orbis/actions/workflows/desktop.yml).
-Its downloadable Actions artifacts require a GitHub sign-in. The demo video
-release is media only, not an app installer.
+Its downloadable Actions artifacts require a GitHub sign-in.
 
 ### Try it in your browser
 
