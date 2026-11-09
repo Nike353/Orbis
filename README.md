@@ -1,59 +1,55 @@
 # Orbis
 
-**Your papers, your notes, your research universe.**
+**One place to read, take notes, discuss, and connect your research.**
 
-Orbis is an open-source research workspace for macOS and Linux. Read papers,
-write your own notes, ask questions beside the original, and connect ideas in
-an interactive galaxy. Bring your own Codex or Claude Code installation; you
-choose the agent, model, and effort, and review its proposed changes.
+Orbis is an open-source research app for **macOS and Linux**. Bring together
+papers, blog posts, and web pages. Read the original beside your notes, ask your
+own AI agent questions, and explore how ideas connect in a 3D research universe.
 
-Your library lives on your computer. Optional encrypted Google Drive sync keeps
-independent laptops up to date without a Git push/pull routine or an always-on
-Orbis server. Every fresh installation starts with an empty library.
+**Your research. Yours to keep.** Your library lives on your computer. Optional
+encrypted Google Drive sync connects your laptops, with no Git push/pull routine
+and no always-on Orbis server.
 
-![Orbis universe view](docs/images/universe.png)
+[![Watch the two-minute Orbis demo](docs/images/orbis-demo.jpg)](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-1080p.mp4)
 
-_Example visualization. The application does not ship with the pictured library._
+**[Watch the two-minute demo](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-1080p.mp4)**
+· [4K version](https://github.com/Nike353/Orbis/releases/download/orbis-demo/Orbis-demo-4K.mp4)
 
-## What you can do
+_The demo uses an existing library. A fresh installation starts empty; no personal
+papers or notes are included in the app._
 
-- **Read the original beside your thinking.** Attach or retrieve PDFs and readable
-  web articles. Scroll a continuous PDF, search its text, follow linked references,
-  highlight passages, and add comments.
-- **Make notes your own.** Keep authored notes separate from generated summaries.
-  Write Markdown and LaTeX, resize the reading panel, and review an answer before
-  saving it as a note.
-- **Discuss a paper where you read it.** Ask questions in the paper's Discuss tab
-  or about a selected passage. Answers use bounded passages from available
-  originals and include page/section citations. Sources and context shows when
-  only notes were available.
-- **Compare evidence.** Compare 2–20 papers using standard or custom criteria,
-  inspect each cell's evidence, ask follow-ups, and export the table.
-- **Build a connected library.** Add research papers, blog posts, and web pages.
-  Research summaries cover motivation, background, the complete framework,
-  results, and limitations. Additional instructions supplement this structure.
-- **Explore your universe.** Switch between the 3D galaxy and chronological 2D
-  lineages. Focus a cluster or filter down to it, inspect connection notes, and
-  create your own methods, clusters, and evidence-backed relationships.
-- **Keep projects independent.** Create multiple graphs with their own sources,
-  notes, discussions, and import queues. Follow work and recover failed tasks
-  through Activity; review agent proposals before applying them.
-- **Use your own agent account.** Orbis discovers installed Codex and Claude Code
-  CLIs and their model/effort options. It uses their existing authentication and
-  account limits. Browsing, reading, and manual editing need no agent.
+## From a source to a connected idea
 
-AI summaries and citations still need your judgment. Original retrieval improves
-context; it does not guarantee that an answer interprets the paper correctly.
+1. **Add a paper, blog, or web page.** Choose your agent, model, and effort.
+   Review its proposed summary, concepts, and connections before adding them.
+   Paper summaries cover the problem, background, framework, results, and limitations.
+2. **Read and make it yours.** Open the original beside its summary. Highlight
+   passages, add comments, and write your own notes with Markdown and LaTeX equations.
+   Your notes stay separate from generated content.
+3. **Discuss while you read.** Ask questions in the paper's Discuss tab or about
+   selected text. Available originals supply passages with page or section citations;
+   the app shows when only stored notes were available.
+4. **Compare and connect.** Compare papers using criteria you choose, inspect the
+   evidence, and export the table. Create your own clusters and relationships.
+5. **Explore the bigger picture.** Rotate the 3D universe, focus or filter a
+   cluster, and hover over connections to read their explanations. Switch to
+   chronological 2D lineages, or keep separate projects in independent graphs.
+
+Orbis works with your installed **Codex or Claude Code CLI** and its existing
+account. You choose the model and effort. Agent proposals require review;
+Activity shows progress and lets you recover failed tasks. Reading and manual
+editing do not require an agent.
 
 ## Get started
 
-**Current version: 2.1.0-beta.1 — desktop preview.** macOS Apple Silicon and Ubuntu
-have been exercised during development. This preview is unsigned, is not notarized,
-and does not include automatic updates. See [verification details](docs/MAC_VERIFICATION.md).
+**Desktop preview · 2.1.0-beta.1.** macOS Apple Silicon and Ubuntu have been
+exercised during development. Builds are currently unsigned and unnotarized;
+automatic updates are not included. [What has been verified →](docs/MAC_VERIFICATION.md)
 
 ### Desktop app
 
-Build on the computer you will use, with **Git, Node.js 22, and uv** installed:
+For now, build the app on the computer where you will use it. Install
+**Git, Node.js 22, and uv**, then run:
 
 ```sh
 git clone https://github.com/Nike353/Orbis.git
@@ -62,32 +58,24 @@ npm ci
 npm run desktop:build
 ```
 
-The build downloads Python 3.12 and packages the local service. Outputs appear
-in `release/desktop/`: a DMG/ZIP on macOS, or an AppImage/DEB on Linux. Open the
-DMG and copy Orbis to Applications; on Linux, install the DEB or make the AppImage
-executable and open it. Subsequent launches require no terminal, Node, or Python.
-Installers are built for the host OS and CPU architecture.
+Find your installer in `release/desktop/`:
 
-The repository also includes a manually triggered
-[desktop build workflow](https://github.com/Nike353/Orbis/actions/workflows/desktop.yml).
-Successful runs provide preview installers as Actions artifacts; downloading those
-artifacts requires a GitHub sign-in. Release downloads, when published, appear on
-[Releases](https://github.com/Nike353/Orbis/releases). Do not assume that every source
-commit has a prebuilt installer.
+| System | Install |
+| --- | --- |
+| macOS | Open the DMG and drag Orbis into Applications. |
+| Linux | Install the DEB, or make the AppImage executable and open it. |
 
-On first launch:
+The build packages the local runtime. After installation, click Orbis to launch;
+you do not need a terminal, Node, or Python to open it. Build on the target OS
+and CPU architecture. The [desktop guide](docs/DESKTOP.md) covers prerequisites,
+agent detection, upgrades, and troubleshooting.
 
-1. Add a source, or use **Local library → Import existing Orbis library** to copy
-   an existing library into an empty installation.
-2. Open a paper with **Read** and attach or retrieve its original.
-3. Install and sign in to Codex or Claude Code if you want AI assistance, then
-   restart Orbis and select your agent/model in Add source, Discuss, or Compare.
-4. Optionally connect Google Drive using the setup below.
+You can also build preview installers using the
+[manual desktop workflow](https://github.com/Nike353/Orbis/actions/workflows/desktop.yml).
+Its downloadable Actions artifacts require a GitHub sign-in. The demo video
+release is media only, not an app installer.
 
-See the [desktop guide](docs/DESKTOP.md) for paths, upgrades, agent detection,
-builds, and troubleshooting, and the [user guide](docs/USER_GUIDE.md) for workflows.
-
-### Try the browser version
+### Try it in your browser
 
 ```sh
 git clone https://github.com/Nike353/Orbis.git
@@ -95,61 +83,71 @@ cd Orbis
 sh start.sh
 ```
 
-The launcher prepares its managed tools, builds the frontend, and prints a local
-URL. First launch needs internet access and can take several minutes. Your
-workspace is stored separately from the application checkout. To choose another:
+Open the local URL printed in the terminal. The launcher sets up its managed
+tools; first launch needs internet and can take several minutes. The library
+is stored outside the app checkout. Choose another location with:
 
 ```sh
 sh start.sh --workspace /path/to/my-library
 ```
 
-The browser version supports local research workflows. Google Drive sign-in,
-encrypted sync, and native operating-system integration require the desktop app.
+Browser mode supports local research workflows. Google sign-in and encrypted
+Drive sync require the desktop app.
 
-## Optional Google Drive sync
+### Your first session
 
-Each laptop keeps its own library and works while the other is asleep. When Orbis
-is open, it syncs graph records, notes, saved discussions, highlights, and original
-metadata through Drive. Original PDFs/articles upload as separately encrypted
-files and download on demand. Use **Keep offline** for papers you want available
-without a connection. You do not have to download the whole collection on every
-computer. Storage counts against your Google Drive quota.
+1. Install and sign in to Codex or Claude Code for AI features, then restart Orbis.
+2. Choose **Add source**, paste a URL, and review the agent's proposal.
+3. Open the source with **Read**. Attach or retrieve its PDF/article, then try
+   **My notes**, **Discuss**, and **Connections** beside it.
+4. Optionally connect Drive, or keep everything local.
 
-This source distribution does **not** contain a Google OAuth client configuration.
-For a self-built app, follow the [one-time Google setup](docs/DESKTOP.md#one-time-setup-for-the-app-owner)
-and choose the downloaded **Desktop app** client JSON in Orbis. Use the same
-configuration on every device. A distributor can bundle its app configuration
-so end users only need to sign in; it must never bundle personal tokens or keys.
+Already have an Orbis library? Use **Local library → Import existing Orbis library**
+in an empty desktop installation. [Full user guide →](docs/USER_GUIDE.md)
 
-On the first laptop, sign in and enable encrypted sync. Save the recovery key.
-On the second, sign in to the same Google account, select the existing library,
-and enter that key. Google sign-in alone cannot decrypt or recover your library.
-Linux needs a working Secret Service or KWallet for secure credential storage.
+## Your library, across laptops
 
-Sync checks for changes while the app is open and presents conflicting edits for
-review. It stops when you quit. Local working files are not encrypted by Orbis;
-keep an independent backup. See [sync, conflicts, and recovery](docs/DESKTOP.md).
+Each laptop keeps an independent local library and works even when the other is
+asleep. With optional Google Drive sync enabled:
 
-## Your data and your agents
+- Notes, graph records, saved discussions, and highlights sync while Orbis is open.
+- PDFs and saved articles are encrypted separately and downloaded when you open
+  them. Use **Keep offline** for originals you want without an internet connection.
+- You do **not** have to download every paper on every device. Stored files count
+  against your own Google Drive quota.
+- Conflicting edits are presented for review. Sync stops when you quit the app.
 
-- The public repository contains app code, an empty graph, and test fixtures.
-  Your working library belongs outside the application checkout.
-- Desktop upgrades preserve the separate library. **Open local library folder**
-  shows its location. Back it up with Orbis closed, including downloaded originals.
-- Agent credentials remain on each device. AI runs use the selected CLI's configured
-  provider; selected notes and source passages may leave your machine for inference.
-  Local orchestration does not mean the model itself runs locally.
-- Agent changes are validated and reviewed before application. The app does not
-  silently replace your personal notes with a conversation transcript.
-- Orbis serves only on localhost. Do not expose its local API to the internet.
+**One-time setup:** this source distribution does not include a Google OAuth
+client configuration. Follow the [Google setup guide](docs/DESKTOP.md#one-time-setup-for-the-app-owner)
+and choose the downloaded Desktop app client JSON in Orbis. Use the same
+configuration on both devices. A distributor can bundle its app configuration
+so users only need to sign in; personal tokens and recovery keys must never be bundled.
 
-Read the [security notes](SECURITY.md) before adapting the app for shared hosting.
-Windows and mobile clients are not currently supported.
+On your first device, sign in, enable encrypted sync, and save the recovery key.
+On the second, sign in to the same Google account, choose the existing library,
+and enter that key. **Google sign-in alone cannot recover an encrypted library.**
+Linux sync needs Secret Service or KWallet. [Sync and recovery details →](docs/DESKTOP.md)
 
-## Develop and contribute
+## What “yours” means
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for verification commands and disposable test
-workspaces. Architecture, schema, and release packaging are documented in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/SCHEMA.md](docs/SCHEMA.md), and
-[docs/OPEN_SOURCE.md](docs/OPEN_SOURCE.md). The code is available under the
-[MIT license](LICENSE).
+- **Your files:** the working library lives outside the application checkout.
+  Updating Orbis preserves it. Use **Open local library folder** to find it, and
+  keep a separate backup with Orbis closed. Local files are not encrypted by Orbis.
+- **Your agent account:** AI requests use your selected CLI's configured provider
+  and account limits. Source passages and notes used for a request may be sent to
+  that provider. A locally installed agent does not mean inference runs on-device.
+- **Your judgment:** summaries and citations can be wrong. Check important claims
+  against the original and review proposed changes before accepting them.
+- **Your choice:** Google Drive is optional. No Orbis-hosted account or server is
+  required. The local API is intended for localhost, not public hosting.
+
+Windows and mobile apps are not currently supported. Read [SECURITY.md](SECURITY.md)
+for security boundaries and [the desktop guide](docs/DESKTOP.md) for preview limits.
+
+## Build with us
+
+Bug reports and contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md)
+for development and verification commands.
+
+[Architecture](docs/ARCHITECTURE.md) · [Data format](docs/SCHEMA.md) ·
+[Release packaging](docs/OPEN_SOURCE.md) · [MIT license](LICENSE)
