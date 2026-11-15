@@ -13,7 +13,7 @@ function backend() {
 test('quit waits for the backend to finish releasing library locks', async () => {
   const child = backend();
   let finished = false;
-  const stopping = stopBackend(child).then(() => (finished = true));
+  const stopping = stopBackend(child, { platform: 'linux' }).then(() => (finished = true));
   await Promise.resolve();
   assert.equal(finished, false);
   assert.deepEqual(child.signals, ['SIGINT']);
@@ -33,7 +33,7 @@ test('quit escalates only a backend that has not exited', async () => {
       child.emit('exit', null, signal);
     }
   };
-  await stopBackend(child, { graceMs: 10, terminateMs: 10 });
+  await stopBackend(child, { graceMs: 10, terminateMs: 10, platform: 'linux' });
   assert.deepEqual(child.signals, ['SIGINT', 'SIGTERM', 'SIGKILL']);
 });
 
@@ -49,4 +49,25 @@ test('an absent, failed-to-start, or exited backend needs no shutdown signal', a
   child.signalCode = 'SIGINT';
   await stopBackend(child);
   assert.deepEqual(child.signals, []);
+});
+
+test('Windows closes the supervisor pipe and waits for owned backend cleanup', async () => {
+  const child = backend();
+  let closed = false,
+    finished = false;
+  child.stdin = {
+    end: () => {
+      closed = true;
+    },
+  };
+  const stopping = stopBackend(child, { platform: 'win32' }).then(() => {
+    finished = true;
+  });
+  assert.equal(closed, true);
+  assert.equal(finished, false);
+  assert.deepEqual(child.signals, []);
+  child.exitCode = 0;
+  child.emit('exit', 0);
+  await stopping;
+  assert.equal(finished, true);
 });

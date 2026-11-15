@@ -79,6 +79,11 @@ The `paper` card:
 `authors` lists the first ~6 authors; append `"..."` (the literal string) for
 longer lists. `arxiv` is optional for existing/manual records. It is required
 for retrieved batch insertions and must exactly match the verified manifest.
+Its `submitted_at` and `updated_at` values must be ISO 8601 datetimes with
+`Z` or a numeric timezone offset, as in the example above. Date-only values
+such as `2023-03-07` are invalid. Preserve verified source timestamps; do not
+invent a time or timezone. For a manual import, omit the optional `arxiv`
+object if its complete metadata cannot be verified.
 
 ## Edges
 

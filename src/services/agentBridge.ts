@@ -4,7 +4,7 @@ export interface AgentSettings {
 }
 
 export interface LocalAgent {
-  id: 'claude' | 'codex';
+  id: 'claude' | 'codex' | 'copilot';
   label: string;
   available: boolean;
   models?: {

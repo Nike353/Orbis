@@ -35,7 +35,7 @@ function steps(desktop: boolean): Step[] {
     },
     {
       title: 'Start with a source.',
-      body: 'Add a research paper, blog post, or web page. Paste its URL, choose Codex or Claude Code, and select a model and effort. Your agent reads the source and connects it to your library.',
+      body: 'Add a research paper, blog post, or web page. Paste its URL, choose Codex, Claude Code, or GitHub Copilot, and select a model and effort. Your agent reads the source and connects it to your library.',
       hint: 'Install and sign in to an agent CLI first. Orbis uses your existing account and its limits.',
       target: '[aria-label="Add paper"]',
       icon: Plus,

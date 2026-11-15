@@ -39,6 +39,16 @@ interface Toast {
   tone: 'default' | 'success' | 'warning' | 'error';
 }
 
+export interface PaperImport {
+  id: string;
+  url: string;
+  sourceKind: 'paper' | 'blog' | 'website';
+  jobId?: string;
+  nodeId?: string;
+  status: 'starting' | 'running' | 'ready' | 'failed' | 'cancelled' | 'excluded';
+  message: string;
+}
+
 interface WorkspaceState {
   graph: GraphData | null;
   baseRevision: number;
@@ -55,8 +65,14 @@ interface WorkspaceState {
   researchScope: string[];
   researchNonce: number;
   researchSessionId: string | null;
+  paperImport: PaperImport | null;
+  beginPaperImport: (url: string, sourceKind: PaperImport['sourceKind']) => string;
+  updatePaperImport: (id: string, updates: Partial<PaperImport>) => void;
+  finishPaperImport: (id: string, nodeId: string) => void;
+  openImport: () => void;
   paperWorkspace: {
     nodeId: string;
+    importId?: string;
     documentId?: string;
     page?: number;
     tab?: 'Summary' | 'My notes' | 'Discuss' | 'Connections';
@@ -129,6 +145,63 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   researchScope: [],
   researchNonce: 0,
   researchSessionId: null,
+  paperImport: null,
+  beginPaperImport: (url, sourceKind) => {
+    const id = `import:${crypto.randomUUID()}`;
+    set({
+      paperImport: {
+        id,
+        url,
+        sourceKind,
+        status: 'starting',
+        message: 'Checking the local agent…',
+      },
+      paperWorkspace: { nodeId: id, importId: id, nonce: 1 },
+      addPaperOpen: false,
+    });
+    return id;
+  },
+  updatePaperImport: (id, updates) =>
+    set((state) =>
+      state.paperImport?.id === id
+        ? { paperImport: { ...state.paperImport, ...updates, id } }
+        : {},
+    ),
+  finishPaperImport: (id, nodeId) =>
+    set((state) => {
+      if (state.paperImport?.id !== id) return {};
+      if (!state.graph?.nodes.some((node) => node.id === nodeId && node.type === 'paper'))
+        throw new Error(
+          'The paper was added, but the graph could not be refreshed. Reload the graph to open it.',
+        );
+      const workspace = state.paperWorkspace;
+      return {
+        paperImport: {
+          ...state.paperImport,
+          status: 'ready',
+          nodeId,
+          message: 'Summary ready',
+        },
+        ...(workspace?.importId === id
+          ? {
+              paperWorkspace: { ...workspace, nodeId },
+              selection: { kind: 'node' as const, id: nodeId },
+            }
+          : {}),
+      };
+    }),
+  openImport: () =>
+    set((state) =>
+      state.paperImport
+        ? {
+            paperWorkspace: {
+              nodeId: state.paperImport.nodeId ?? state.paperImport.id,
+              importId: state.paperImport.id,
+              nonce: (state.paperWorkspace?.nonce ?? 0) + 1,
+            },
+          }
+        : {},
+    ),
   paperWorkspace: null,
   openPaper: (nodeId, documentId, page, tab) =>
     set((state) => {

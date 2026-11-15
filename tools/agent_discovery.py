@@ -4,9 +4,7 @@ import json
 import os
 import queue
 import re
-import shlex
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
@@ -15,8 +13,10 @@ from contextlib import contextmanager
 
 try:
     from branding import env_setting
+    from agent_process import command_parts, start_agent, stop_agent, run_agent
 except ModuleNotFoundError:
     from tools.branding import env_setting
+    from tools.agent_process import command_parts, start_agent, stop_agent, run_agent
 
 EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 MODEL_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:/@+\[\]-]{0,159}\Z')
@@ -32,10 +32,9 @@ def agent_environment():
 
 @contextmanager
 def metadata_process(command, directory):
-    proc = subprocess.Popen(command, cwd=directory, env=agent_environment(),
+    proc = start_agent(command, cwd=directory, env=agent_environment(),
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.DEVNULL, text=True, bufsize=1,
-                            start_new_session=True)
+                            stderr=subprocess.DEVNULL, text=True, bufsize=1)
     messages = queue.Queue(maxsize=256)
 
     def read():
@@ -81,12 +80,8 @@ def metadata_process(command, directory):
     try:
         yield proc, exchange
     finally:
-        # npm wrappers can leave a native CLI child running after their own exit.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait()
+        stop_agent(proc)
+        proc.wait(timeout=5)
         reader.join(timeout=1)
         proc.stdin.close()
         proc.stdout.close()
@@ -136,7 +131,7 @@ def codex_profile(command, directory):
         for model in models:
             if model['id'].startswith(prefix[1]):
                 model['aliases'] = [model['id'][len(prefix[1]):]]
-    version_text = subprocess.run([*command, '--version'], env=agent_environment(),
+    version_text = run_agent([*command, '--version'], env=agent_environment(),
                                   stdin=subprocess.DEVNULL, capture_output=True,
                                   text=True, timeout=PROBE_TIMEOUT, check=True).stdout
     version = re.search(r'\d+\.\d+\.\d+[\w.-]*', version_text)
@@ -148,7 +143,7 @@ def codex_profile(command, directory):
 
 
 def claude_profile(command, directory):
-    help_text = subprocess.run([*command, '--help'], env=agent_environment(),
+    help_text = run_agent([*command, '--help'], env=agent_environment(),
                                stdin=subprocess.DEVNULL, capture_output=True,
                                text=True, timeout=PROBE_TIMEOUT, check=True).stdout
     # --bare skips OAuth/keychain auth, and --restricted ignores user settings.
@@ -199,11 +194,11 @@ def claude_profile(command, directory):
 
 
 def agent_profile(agent, command=None):
-    if agent not in ('codex', 'claude'):
+    if agent not in ('codex', 'claude', 'copilot'):
         raise ValueError('Unknown local agent.')
     if command is None:
         try:
-            command = shlex.split(env_setting(agent.upper(), agent))
+            command = command_parts(env_setting(agent.upper(), agent))
         except ValueError:
             command = []
     executable = shutil.which(command[0]) if command else None
@@ -215,20 +210,45 @@ def agent_profile(agent, command=None):
     if not executable:
         return empty
     command = [executable, *command[1:]]
-    key = (agent, tuple(command), os.environ.get('CODEX_HOME'), os.environ.get('CLAUDE_CONFIG_DIR'))
+    key = (agent, tuple(command), os.environ.get('CODEX_HOME'), os.environ.get('CLAUDE_CONFIG_DIR'),
+           os.environ.get('COPILOT_HOME'))
     with _cache_lock:
         cached = _cache.get(key)
         if cached and time.monotonic() - cached[0] < cached[1]:
             return copy.deepcopy(cached[2])
         try:
             with tempfile.TemporaryDirectory(prefix='orbis-models-') as directory:
-                result = (codex_profile if agent == 'codex' else claude_profile)(command, directory)
+                result = {'codex': codex_profile, 'claude': claude_profile,
+                          'copilot': copilot_profile}[agent](command, directory)
             if not result['models']:
                 raise ValueError('CLI returned no models')
             result.update(model_source='cli', model_error='')
             lifetime = 60
-        except (OSError, ValueError, TypeError, AttributeError, KeyError, queue.Empty, subprocess.SubprocessError):
-            result = {**empty, 'model_error': 'Could not read this CLI’s models. Update/sign in to the CLI, then reopen the model picker. CLI default remains available.'}
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, queue.Empty, subprocess.SubprocessError) as exc:
+            message = 'Could not read this CLI’s models. Update/sign in to the CLI, then reopen the model picker. CLI default remains available.'
+            if agent == 'copilot' and isinstance(exc, subprocess.CalledProcessError):
+                try:
+                    diagnostic = json.loads(exc.stdout)
+                except (ValueError, TypeError):
+                    diagnostic = {}
+                if isinstance(diagnostic, dict) and isinstance(diagnostic.get("error"), str):
+                    message = diagnostic["error"][:2000]
+            result = {**empty, 'model_error': message}
             lifetime = 10
         _cache[key] = (time.monotonic(), lifetime, result)
         return copy.deepcopy(result)
+
+
+def copilot_profile(command, directory):
+    try:
+        from copilot_adapter import worker_command
+    except ModuleNotFoundError:
+        from tools.copilot_adapter import worker_command
+    completed = run_agent(worker_command(command, "metadata"), cwd=directory,
+                          env=agent_environment(), capture_output=True, text=True,
+                          timeout=65, check=True)
+    result = json.loads(completed.stdout)
+    result["models"] = [model_record(m["id"], m["label"], m["efforts"],
+                                     default_effort=m.get("default_effort", ""))
+                        for m in result["models"]]
+    return result

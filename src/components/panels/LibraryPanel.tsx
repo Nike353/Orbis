@@ -6,6 +6,7 @@ import {
   FileInput,
   FileText,
   Layers3,
+  LoaderCircle,
 } from 'lucide-react';
 import { graphStats } from '../../domain/graph';
 import { clusterPaperCounts } from '../../domain/hypergraph';
@@ -21,6 +22,8 @@ export function LibraryPanel() {
   const setCluster = useWorkspaceStore((state) => state.setCluster);
   const replaceGraph = useWorkspaceStore((state) => state.replaceGraph);
   const addToast = useWorkspaceStore((state) => state.addToast);
+  const paperImport = useWorkspaceStore((state) => state.paperImport);
+  const openImport = useWorkspaceStore((state) => state.openImport);
   const clusterFilter = useWorkspaceStore((state) => state.filters.clusterId);
   const query = useWorkspaceStore((state) => state.filters.query.trim().toLowerCase());
   const stats = graphStats(graph);
@@ -44,6 +47,10 @@ export function LibraryPanel() {
           (right.created_at ?? '').localeCompare(left.created_at ?? ''),
         )
         .slice(0, 12);
+  const showImport =
+    paperImport &&
+    paperImport.status !== 'ready' &&
+    (!query || paperImport.url.toLowerCase().includes(query));
 
   return (
     <div className="panel-scroll">
@@ -119,6 +126,23 @@ export function LibraryPanel() {
           <span>{query ? filteredNodes.length : ''}</span>
         </div>
         <div className="library-list">
+          {showImport && (
+            <button onClick={openImport}>
+              {['starting', 'running'].includes(paperImport.status) ? (
+                <LoaderCircle className="spin" size={15} aria-hidden="true" />
+              ) : (
+                <BookOpen size={15} aria-hidden="true" />
+              )}
+              <span>
+                <strong>{paperImport.url}</strong>
+                <small>
+                  {['starting', 'running'].includes(paperImport.status)
+                    ? 'Preparing summary · Read now'
+                    : 'Import needs attention · Read preview'}
+                </small>
+              </span>
+            </button>
+          )}
           {matchingNodes.map((node) => (
             <button
               key={node.id}
@@ -135,7 +159,7 @@ export function LibraryPanel() {
               </span>
             </button>
           ))}
-          {matchingNodes.length === 0 && (
+          {matchingNodes.length === 0 && !showImport && (
             <div className="empty-panel">
               <BookOpen size={22} aria-hidden="true" />
               <p>No papers or concepts match this search.</p>

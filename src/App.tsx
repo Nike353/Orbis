@@ -133,7 +133,7 @@ export function App() {
               </div>
             }
           >
-            <PaperWorkspace key={paperWorkspace.nodeId} />
+            <PaperWorkspace key={paperWorkspace.importId ?? paperWorkspace.nodeId} />
           </Suspense>
         )}
       </div>

@@ -478,7 +478,7 @@ class DocumentStore:
         return {"documents": [self.view(r) for r in records], "annotations": annotations}
 
     def attach(self, node_id, content, filename="paper.pdf", source_url="", media_type="application/pdf",
-               cancelled=None):
+               cancelled=None, preview_job_id=None):
         validate_url(source_url, empty=True)
         if not content or len(content) > MAX_FILE_BYTES:
             raise DocumentError("Choose an original file up to 25 MB.")
@@ -492,7 +492,14 @@ class DocumentStore:
         else:
             raise DocumentError("Choose a PDF or readable UTF-8 text file.")
         with self.graph_lock, self.lock:
-            self.node(node_id)
+            if preview_job_id:
+                job = next((j for j in self.jobs()
+                            if j["id"] == preview_job_id and j.get("import_job_id")), None)
+                if job is None:
+                    raise DocumentError("Import preview no longer exists.", 404)
+                node_id = job.get("node_id", "")
+            if node_id or not preview_job_id:
+                self.node(node_id)
             sha = hashlib.sha256(content).hexdigest()
             records = self.records()
             duplicate = next((r for r in records.values()
@@ -510,8 +517,11 @@ class DocumentStore:
                     "retrieved_at": utc_now(),
                 }
                 validate_document(record)
-                records[record["id"]] = record
-                self.write(self.path, records)
+                if node_id:
+                    records[record["id"]] = record
+                    self.write(self.path, records)
+                if preview_job_id:
+                    self.update_job(preview_job_id, preview_document=record)
         # Parsing can be slow; metadata and galaxy saves stay available while it runs.
         self.index(record, cancelled)
         return self.view(record)
@@ -522,8 +532,11 @@ class DocumentStore:
         with self.lock:
             record = self.records().get(identifier)
             if record is None:
+                record = next((j["preview_document"] for j in self.jobs()
+                               if j.get("preview_document", {}).get("id") == identifier), None)
+            if record is None:
                 raise DocumentError("Original not found in this graph.", 404)
-            return record
+            return validate_document(record)
 
     def pages(self, identifier, query=""):
         record = self.document(identifier)
@@ -685,6 +698,51 @@ class DocumentStore:
             threading.Thread(target=self.run_fetch, args=(dict(job), cancelled), daemon=True).start()
             return job
 
+    def fetch_import(self, import_job):
+        url = original_url(import_job["url"])
+        validate_url(url)
+        with self.lock:
+            jobs = self.jobs()
+            existing = next((j for j in jobs if j.get("import_job_id") == import_job["id"]
+                             and j["status"] in ("queued", "fetching", "reading", "completed")), None)
+            if existing and (existing["status"] != "completed"
+                             or self.file_available(self.document(existing["document_id"])["sha256"])):
+                return existing
+            job = {"id": uuid.uuid4().hex, "kind": "document",
+                   "import_job_id": import_job["id"], "node_id": import_job.get("node_id") or "",
+                   "title": import_job["title"], "url": url, "status": "queued", "created_at": utc_now()}
+            jobs.insert(0, job)
+            self.write(self.jobs_path, jobs[:500])
+            cancelled = threading.Event()
+            self.active[job["id"]] = cancelled
+            threading.Thread(target=self.run_fetch, args=(dict(job), cancelled), daemon=True).start()
+            return job
+
+    def bind_import(self, import_job_id, node_id, source_url=None):
+        """Promote a local preview only after the graph insertion has been validated."""
+        if not import_job_id:
+            return False
+        with self.graph_lock, self.lock:
+            self.node(node_id)
+            jobs = self.jobs()
+            job = next((j for j in jobs if j.get("import_job_id") == import_job_id), None)
+            if job is None:
+                return False
+            if source_url and source_identity(original_url(job["url"])) != source_identity(original_url(source_url)):
+                return False
+            if job.get("node_id") and job["node_id"] != node_id:
+                raise DocumentError("Import preview already belongs to another paper.", 409)
+            job["node_id"] = node_id
+            if job.get("preview_document"):
+                record = {**job["preview_document"], "node_id": node_id}
+                validate_document(record)
+                records = self.records()
+                records[record["id"]] = record
+                self.write(self.path, records)
+                job["preview_document"] = record
+            self.write(self.jobs_path, jobs)
+            return job["status"] in ("queued", "fetching", "reading", "completed")
+
     def run_fetch(self, job, cancelled):
         try:
             self.update_job(job["id"], status="fetching")
@@ -707,7 +765,8 @@ class DocumentStore:
                 raise DocumentError("Source is not a PDF or readable article. Attach an original manually.")
             if cancelled.is_set():
                 raise DocumentError("Cancelled by user.")
-            record = self.attach(job["node_id"], content, filename, final_url, media_type, cancelled)
+            record = self.attach(job["node_id"], content, filename, final_url, media_type, cancelled,
+                                 preview_job_id=job["id"] if job.get("import_job_id") else None)
             self.update_job(job["id"], status="completed", document_id=record["id"],
                             finished_at=utc_now(), error="")
         except Exception as exc:

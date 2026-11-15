@@ -30,6 +30,10 @@ class AgentSettingsTests(unittest.TestCase):
                 'default_efforts': ['low', 'medium', 'high'], 'model_source': 'cli',
                 'startup_arguments': ['--safe-mode'],
             },
+            'copilot': {
+                'models': [{'id': 'test-model', 'label': 'Test model', 'efforts': ['low', 'high']}],
+                'default_efforts': [], 'model_source': 'cli',
+            },
         }
         for target in ('tools.agent_settings.agent_profile', 'tools.agent_bridge.agent_profile',
                        'tools.research.agent_profile'):
@@ -41,6 +45,15 @@ class AgentSettingsTests(unittest.TestCase):
         self.assertEqual(normalize_settings('codex'), {'model': '', 'effort': 'medium'})
         self.assertEqual(settings_arguments('codex', {}), [])
         self.assertEqual(settings_arguments('claude', {}), [])
+        self.assertEqual(settings_arguments('copilot', {}), [])
+
+    def test_copilot_effort_requires_a_reported_model_and_level(self):
+        self.assertEqual(settings_arguments('copilot', {'model': 'test-model', 'effort': 'high'}),
+                         ['--model', 'test-model', '--reasoning-effort', 'high'])
+        for value in ({'effort': 'high'}, {'model': 'test-model', 'effort': 'medium'},
+                      {'model': 'custom-model', 'effort': 'high'}):
+            with self.assertRaises(ValueError):
+                normalize_settings('copilot', value)
 
     def test_settings_reject_invalid_arguments_and_combinations(self):
         for value in ({'model': '--dangerously-bypass'}, {'model': 'x; echo bad'},
@@ -67,7 +80,7 @@ class AgentSettingsTests(unittest.TestCase):
                          ['--model', 'haiku', '--effort', 'medium'])
 
     @patch('tools.agent_bridge.shutil.which', side_effect=lambda p: '/usr/bin/' + p)
-    @patch('tools.research.subprocess.run', return_value=subprocess.CompletedProcess([], 0, stdout='[{"name":"fixture-mcp"}]'))
+    @patch('tools.agent_bridge.run_agent', return_value=subprocess.CompletedProcess([], 0, stdout='[{"name":"fixture-mcp"}]'))
     def test_both_workflows_pass_selected_settings_without_changing_sandbox(self, _probe, _which):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
@@ -87,7 +100,7 @@ class AgentSettingsTests(unittest.TestCase):
 
     def test_mcp_names_cannot_change_the_override_path(self):
         for name in ('nested.server', '"quoted"', 'space name', ''):
-            with self.subTest(name=name), patch('tools.agent_bridge.subprocess.run',
+            with self.subTest(name=name), patch('tools.agent_bridge.run_agent',
                     return_value=subprocess.CompletedProcess([], 0, stdout=json.dumps([{'name': name}]))):
                 with self.assertRaisesRegex(BridgeContractError, 'Cannot restrict Codex'):
                     codex_tool_restrictions(['codex'], read_only=True)

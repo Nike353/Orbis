@@ -46,6 +46,7 @@ try:
         stream_agent_events,
         agent_environment,
         stop_agent,
+        start_agent,
         utc_now,
         validate_full_text_source,
     )
@@ -69,6 +70,7 @@ except ModuleNotFoundError:  # Imported as tools.serve by tests.
         stream_agent_events,
         agent_environment,
         stop_agent,
+        start_agent,
         utc_now,
         validate_full_text_source,
     )
@@ -708,6 +710,12 @@ class Handler(SimpleHTTPRequestHandler):
                     raise DocumentError("Invalid document request.")
                 if parts == ["api", "documents", "fetch"]:
                     value = document_store.fetch(body)
+                elif parts == ["api", "documents", "preview"]:
+                    job = next((j for j in activity_store.read()
+                                if j["id"] == body.get("import_job_id") and j.get("kind") == "import"), None)
+                    if job is None:
+                        raise DocumentError("Import not found in this library.", 404)
+                    value = document_store.fetch_import(job)
                 elif parts == ["api", "annotations"]:
                     value = document_store.annotate(body)
                 elif len(parts) == 3 and parts[:2] == ["api", "annotations"]:
@@ -851,14 +859,13 @@ class Handler(SimpleHTTPRequestHandler):
                     finish("cancelled", reason="Cancelled by user.")
                     emit({"type": "error", "message": "Cancelled by user."})
                     return
-                proc = subprocess.Popen(
+                proc = start_agent(
                     command,
                     cwd=str(insertion.workspace),
                     text=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env=agent_environment(),
-                    start_new_session=True,
                 )
             except (OSError, BridgeContractError) as exc:
                 reason = f"failed to launch {agent_label}: {exc}"
@@ -951,7 +958,8 @@ class Handler(SimpleHTTPRequestHandler):
                         insertion.apply()
                     finish("inserted", result=result, reason=reason, graph_node_id=graph_node_id)
                     try:
-                        document_store.fetch({"node_id": graph_node_id, "url": full_text_source["url"]})
+                        if not document_store.bind_import(job_id, graph_node_id, full_text_source["url"]):
+                            document_store.fetch({"node_id": graph_node_id, "url": full_text_source["url"]})
                     except (DocumentError, OSError) as exc:
                         activity_store.update(job_id, attachment_error=str(exc)[:1000])
                 else:
@@ -1025,7 +1033,7 @@ def configure_workspace(root, use_environment=True):
     return workspace_lock
 
 
-def main():
+def main(parent_pipe=False):
     global ROOT, graph_catalog, desktop_store
     parser = argparse.ArgumentParser(description="Orbis local server")
     parser.add_argument("--port", type=int, help="Port to bind; defaults to an available port starting at 8000")
@@ -1077,6 +1085,11 @@ def main():
     graph_catalog = GraphCatalog(ROOT, Path(__file__))
     graph_catalog.register_main(server)
     desktop_store = DesktopStore(ROOT, graph_catalog, globals())
+    if parent_pipe:
+        def parent_closed():
+            sys.stdin.buffer.read()
+            server.shutdown()
+        threading.Thread(target=parent_closed, daemon=True).start()
     print(
         "Orbis serving on http://127.0.0.1:%d  (Ctrl-C to stop)"
         % server.server_address[1], flush=True)
@@ -1091,7 +1104,7 @@ def main():
             event.set()
         for event in list(document_store.active.values()):
             event.set()
-        # Give the worker time to kill its process group and persist cancellation.
+        # Give the worker time to stop its owned process tree and persist cancellation.
         if insert_lock.acquire(timeout=5):
             insert_lock.release()
         server.server_close()

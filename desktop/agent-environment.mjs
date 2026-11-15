@@ -12,7 +12,8 @@ async function executable(file) {
   }
 }
 
-async function agentCommand(file) {
+async function agentCommand(file, platform) {
+  if (platform === 'win32') return `"${file}"`;
   const node = path.join(path.dirname(file), 'node');
   try {
     if (await executable(node)) {
@@ -38,28 +39,65 @@ export async function agentEnvironment(
     home = os.homedir(),
     platform = process.platform,
     applications = '/Applications',
-    additionalPaths = [
-      path.join(home, '.local/bin'),
-      path.join(home, '.toolbox/bin'),
-      path.join(home, '.npm-global/bin'),
-      path.join(home, '.npm/bin'),
-      path.join(home, '.bun/bin'),
-      path.join(home, '.volta/bin'),
-      path.join(home, '.asdf/shims'),
-      '/opt/homebrew/bin',
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-    ],
+    additionalPaths = platform === 'win32'
+      ? [
+          path.join(home, '.local', 'bin'),
+          path.join(home, '.volta', 'bin'),
+          path.join(inherited.APPDATA || path.join(home, 'AppData', 'Roaming'), 'npm'),
+          path.join(
+            inherited.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+            'Microsoft',
+            'WinGet',
+            'Links',
+          ),
+          path.join(
+            inherited.LOCALAPPDATA || path.join(home, 'AppData', 'Local'),
+            'Programs',
+            'GitHub Copilot CLI',
+          ),
+          ...[
+            inherited.NVM_HOME,
+            inherited.NVM_SYMLINK,
+            inherited.FNM_MULTISHELL_PATH,
+            inherited.VOLTA_HOME && path.join(inherited.VOLTA_HOME, 'bin'),
+            inherited.ProgramFiles && path.join(inherited.ProgramFiles, 'nodejs'),
+          ].filter(Boolean),
+        ]
+      : [
+          path.join(home, '.local/bin'),
+          path.join(home, '.toolbox/bin'),
+          path.join(home, '.npm-global/bin'),
+          path.join(home, '.npm/bin'),
+          path.join(home, '.bun/bin'),
+          path.join(home, '.volta/bin'),
+          path.join(home, '.asdf/shims'),
+          '/opt/homebrew/bin',
+          '/usr/local/bin',
+          '/usr/bin',
+          '/bin',
+        ],
   } = {},
 ) {
   const env = { ...inherited };
   const versionedPaths = [];
-  for (const [root, suffix] of [
-    [path.join(home, '.nvm/versions/node'), 'bin'],
-    [path.join(home, '.local/share/fnm/node-versions'), 'installation/bin'],
-    [path.join(home, '.local/share/mise/installs/node'), 'bin'],
-  ]) {
+  const versionRoots =
+    platform === 'win32'
+      ? [
+          [inherited.NVM_HOME || path.join(home, 'AppData', 'Roaming', 'nvm'), ''],
+          [
+            path.join(
+              inherited.FNM_DIR || path.join(home, 'AppData', 'Roaming', 'fnm'),
+              'node-versions',
+            ),
+            'installation',
+          ],
+        ]
+      : [
+          [path.join(home, '.nvm/versions/node'), 'bin'],
+          [path.join(home, '.local/share/fnm/node-versions'), 'installation/bin'],
+          [path.join(home, '.local/share/mise/installs/node'), 'bin'],
+        ];
+  for (const [root, suffix] of versionRoots) {
     try {
       const versions = await readdir(root);
       versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
@@ -68,21 +106,36 @@ export async function agentEnvironment(
       // A version manager is optional.
     }
   }
-  const inheritedPaths = (env.PATH || '').split(path.delimiter).filter(Boolean);
+  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH');
+  const inheritedPaths = (env[pathKey] || '').split(path.delimiter).filter(Boolean);
+  if (platform === 'win32')
+    for (const key of Object.keys(env))
+      if (key !== 'PATH' && key.toUpperCase() === 'PATH') delete env[key];
   const directories = [
     ...new Set([...inheritedPaths, ...additionalPaths, ...versionedPaths]),
   ];
   env.PATH = directories.join(path.delimiter);
-  for (const agent of ['CODEX', 'CLAUDE']) {
+  for (const agent of ['CODEX', 'CLAUDE', 'COPILOT']) {
     if (!env[`ORBIS_${agent}`] && env[`LITBENCH_${agent}`])
       env[`ORBIS_${agent}`] = env[`LITBENCH_${agent}`];
     if (env[`ORBIS_${agent}`]) continue;
     const name = agent.toLowerCase();
     for (const directory of directories) {
-      const candidate = path.join(directory, name);
-      if (!(await executable(candidate))) continue;
+      const candidates =
+        platform === 'win32'
+          ? ['.exe', '.cmd', '.bat'].map((extension) =>
+              path.join(directory, name + extension),
+            )
+          : [path.join(directory, name)];
+      let candidate;
+      for (const file of candidates)
+        if (await executable(file)) {
+          candidate = file;
+          break;
+        }
+      if (!candidate) continue;
       if (!inheritedPaths.includes(directory)) {
-        env[`ORBIS_${agent}`] = await agentCommand(candidate);
+        env[`ORBIS_${agent}`] = await agentCommand(candidate, platform);
         // npm-installed CLIs need the Node runtime from the same installation.
         env.PATH = [directory, ...env.PATH.split(path.delimiter)].join(path.delimiter);
       }

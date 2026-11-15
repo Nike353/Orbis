@@ -263,6 +263,24 @@ html:root {
   margin: 0 0 16px;
   font-size: 18px;
 }
+.pending-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 8px 0;
+}
+.pending-summary > svg {
+  color: var(--blue);
+}
+.pending-summary h2,
+.pending-summary p {
+  margin: 0;
+}
+.pending-summary small {
+  color: var(--muted);
+  font-size: 12px;
+}
 .paper-tab-panel h3 {
   margin-top: 24px;
   font-size: 15px;
@@ -4194,6 +4212,7 @@ a {
 
 .field input,
 .field textarea,
+.add-paper-dialog .field > select,
 .dialog-agent-select select {
   width: 100%;
   padding: 9px 10px;
@@ -4206,6 +4225,7 @@ a {
 }
 
 .field input,
+.add-paper-dialog .field > select,
 .dialog-agent-select select {
   height: 38px;
 }
@@ -4217,6 +4237,7 @@ a {
 
 .field input:focus,
 .field textarea:focus,
+.add-paper-dialog .field > select:focus,
 .dialog-agent-select select:focus {
   border-color: #6c91d2;
   box-shadow: 0 0 0 2px rgb(56 111 206 / 12%);
@@ -4914,8 +4935,7 @@ a {
 }
 
 .agent-model-settings select,
-.agent-model-settings input,
-.add-paper-dialog .field > select {
+.agent-model-settings input {
   min-height: 36px;
   padding: 7px 9px;
   font: inherit;

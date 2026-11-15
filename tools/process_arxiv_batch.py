@@ -113,7 +113,7 @@ def parse_args(argv=None):
     parser.add_argument("--batch", type=Path, default=DEFAULT_BATCH)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--only", action="append", default=[])
-    parser.add_argument("--agent", choices=("claude", "codex"))
+    parser.add_argument("--agent", choices=("claude", "codex", "copilot"))
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--stop-on-error", action="store_true")
     return parser.parse_args(argv)

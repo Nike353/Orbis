@@ -6,10 +6,10 @@ import json
 import math
 import os
 import re
-import shlex
 import shutil
-import signal
+import shlex
 import subprocess
+import sys
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -19,9 +19,11 @@ from urllib.parse import urlparse
 try:
     from build_data_js import render_mirror, validate
     from branding import env_setting
+    from agent_process import command_parts, run_agent, start_agent, stop_agent
 except ModuleNotFoundError:  # Imported as tools.agent_bridge by tests.
     from tools.build_data_js import render_mirror, validate
     from tools.branding import env_setting
+    from tools.agent_process import command_parts, run_agent, start_agent, stop_agent
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,11 +44,15 @@ TERMINAL_STATUSES = {
     "inserted", "excluded", "duplicate",
 }
 
+VALIDATOR_COMMAND = ((subprocess.list2cmdline if os.name == "nt" else shlex.join)(
+    [sys.executable, "--orbis-rebuild-graph"]) if getattr(sys, "frozen", False)
+    else ("python tools/build_data_js.py" if os.name == "nt" else "python3 tools/build_data_js.py"))
+
 ALLOWED_TOOLS = [
     "WebFetch",
     "Read", "Glob", "Grep",
     "Edit", "Write",
-    "Bash(python3 tools/build_data_js.py)",
+    f"Bash({VALIDATOR_COMMAND})",
 ]
 
 AGENT_ORIGINS = {"agent", "claude"}
@@ -123,12 +129,18 @@ def _agent_definitions():
             "command": env_setting("CODEX", "codex"),
             "protocol": "codex",
         },
+        {
+            "id": "copilot",
+            "label": "GitHub Copilot",
+            "command": env_setting("COPILOT", "copilot"),
+            "protocol": "copilot",
+        },
     ]
 
 
 def _command_parts(command):
     try:
-        return shlex.split(command)
+        return command_parts(command)
     except ValueError:
         return []
 
@@ -649,6 +661,10 @@ class IsolatedInsertion:
             target = self.workspace / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+            if (os.name == "nt" or getattr(sys, "frozen", False)) and relative == "prompts/insert_paper.md":
+                target.write_text(target.read_text(encoding="utf-8").replace(
+                    "python3 tools/build_data_js.py", VALIDATOR_COMMAND).replace(
+                    "python tools/build_data_js.py", VALIDATOR_COMMAND), encoding="utf-8")
         shutil.copytree(
             self.repository_root / "papers", self.workspace / "papers")
         return self
@@ -1103,6 +1119,14 @@ def build_agent_command(
     overrides = settings_arguments(agent_id, settings)
     schema_path = write_outcome_schema(workspace)
 
+    if agent["protocol"] == "copilot":
+        try:
+            from copilot_adapter import worker_command
+        except ModuleNotFoundError:
+            from tools.copilot_adapter import worker_command
+        return worker_command(executable, "import", schema_path, prompt,
+                              normalize_settings(agent_id, settings), read_only, max_turns)
+
     if agent["protocol"] == "codex":
         # ponytail: workspace-write permits paper retrieval; transaction
         # verification still enforces read-only revalidation.
@@ -1170,7 +1194,7 @@ def codex_tool_restrictions(command, read_only=False):
         # Enumerate the same configuration the run will use. Plugin servers
         # disappear when plugins are disabled; adding top-level overrides for
         # them would create incomplete server definitions with no transport.
-        configured = subprocess.run([*command, *restrictions, "mcp", "list", "--json"],
+        configured = run_agent([*command, *restrictions, "mcp", "list", "--json"],
                                     env=agent_environment(), stdin=subprocess.DEVNULL,
                                     capture_output=True, text=True, timeout=10, check=True)
         servers = json.loads(configured.stdout)
@@ -1187,13 +1211,6 @@ def codex_tool_restrictions(command, read_only=False):
         # CLI override paths are dot-split; quotes would become part of the server name.
         restrictions += ["-c", "mcp_servers." + server["name"] + ".enabled=false"]
     return restrictions
-
-
-def stop_agent(proc):
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
 
 
 def _parse_json_text(value):
@@ -1322,6 +1339,20 @@ def stream_agent_events(proc, agent_id, emit):
             continue
 
         event_type = str(event.get("type", ""))
+        if protocol == "copilot":
+            if event_type == "copilot.tool":
+                emit(_tool_event(event.get("name", "Copilot tool"), ""))
+            elif event_type == "copilot.result":
+                if event.get("ok") is not True:
+                    raise BridgeContractError(str(event.get("error") or "Copilot failed.")[:2000])
+                result["ok"] = True
+                output = event.get("structured_output")
+                result["structured_output"] = output if isinstance(output, dict) else None
+                result["webfetch_urls"] = _source_urls(event.get("webfetch_urls", []))
+                duration = event.get("duration_s")
+                if type(duration) in (int, float) and math.isfinite(duration) and duration >= 0:
+                    result["duration_s"] = duration
+            continue
         if protocol == "claude":
             if event_type == "system" and event.get("subtype") == "init":
                 emit({

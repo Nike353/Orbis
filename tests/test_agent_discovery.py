@@ -77,18 +77,18 @@ class AgentDiscoveryTests(unittest.TestCase):
         self.addCleanup(discovery._cache.clear)
 
     def cli(self, name):
-        file = self.root / name
+        file = self.root / (name + ".py")
         file.write_text(f"#!{sys.executable}\n" + CLI)
         file.chmod(0o700)
-        return str(file)
+        return [sys.executable, str(file)]
 
     def requests(self, command):
-        return [json.loads(line) for line in Path(command).with_suffix('.requests').read_text().splitlines()]
+        return [json.loads(line) for line in Path(command[-1]).with_suffix('.requests').read_text().splitlines()]
 
     def test_codex_handshake_pagination_provider_ids_and_cache_without_turns(self):
         command = self.cli('codex')
         with patch.dict(os.environ, {'ORBIS_DESKTOP_TOKEN': 'fixture-secret'}):
-            profile = discovery.agent_profile('codex', [command])
+            profile = discovery.agent_profile('codex', command)
         self.assertEqual(profile['model_source'], 'cli')
         self.assertEqual(profile['cli_version'], '0.167.42')
         self.assertEqual([m['id'] for m in profile['models']],
@@ -103,14 +103,14 @@ class AgentDiscoveryTests(unittest.TestCase):
         self.assertTrue(all(not r['desktop_token_present'] for r in requests))
         self.assertNotIn('do-not-export', json.dumps(profile))
         profile['models'].clear()
-        cached = discovery.agent_profile('codex', [command])
+        cached = discovery.agent_profile('codex', command)
         self.assertEqual(len(cached['models']), 2)
         self.assertEqual(len(self.requests(command)), len(requests))
 
     def test_claude_reports_new_aliases_and_effective_settings_without_opaque_state(self):
         command = self.cli('claude')
         with patch.dict(os.environ, {'ANTHROPIC_MODEL': '', 'CLAUDE_CODE_EFFORT_LEVEL': ''}):
-            profile = discovery.agent_profile('claude', [command])
+            profile = discovery.agent_profile('claude', command)
         self.assertEqual(profile['model_source'], 'cli')
         self.assertEqual([m['id'] for m in profile['models']], ['sonnet', 'fable'])
         self.assertEqual(profile['default_model'], 'sonnet')
@@ -127,7 +127,7 @@ class AgentDiscoveryTests(unittest.TestCase):
 
     def test_stock_claude_without_safe_mode_keeps_auth_and_disables_hooks(self):
         command = self.cli('stock-claude')
-        profile = discovery.agent_profile('claude', [command])
+        profile = discovery.agent_profile('claude', command)
         self.assertEqual(profile['model_source'], 'cli')
         self.assertEqual(profile['startup_arguments'], ['--settings', '{"disableAllHooks":true}'])
         self.assertNotIn('--safe-mode', self.requests(command)[0]['args'])
@@ -135,7 +135,7 @@ class AgentDiscoveryTests(unittest.TestCase):
     def test_custom_default_does_not_borrow_another_models_effort_levels(self):
         command = self.cli('claude')
         with patch.dict(os.environ, {'ANTHROPIC_MODEL': 'my-deployment'}):
-            profile = discovery.agent_profile('claude', [command])
+            profile = discovery.agent_profile('claude', command)
         self.assertEqual(profile['default_model'], 'my-deployment')
         self.assertEqual(profile['default_model_label'], 'my-deployment')
         self.assertEqual(profile['default_efforts'], [])
@@ -147,7 +147,7 @@ class AgentDiscoveryTests(unittest.TestCase):
         hanging.write_text(f'#!{sys.executable}\nimport time\ntime.sleep(60)\n')
         hanging.chmod(0o700)
         with patch.object(discovery, 'PROBE_TIMEOUT', 0.2):
-            failed = discovery.agent_profile('codex', [str(hanging)])
+            failed = discovery.agent_profile('codex', [sys.executable, str(hanging)])
         self.assertEqual(failed['models'], [])
         self.assertEqual(failed['model_source'], 'unavailable')
         self.assertIn('CLI default remains available', failed['model_error'])

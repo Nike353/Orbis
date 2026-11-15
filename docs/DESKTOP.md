@@ -3,14 +3,18 @@
 Open Orbis like a normal application. The desktop shell starts its bundled local
 service, opens your library, and stops the service when you quit. Python and Node
 are bundled; users do not need a terminal to launch it. AI features still use your
-own installed, signed-in Codex or Claude Code CLI and its account limits.
+own installed, signed-in GitHub Copilot, Codex, or Claude Code CLI and its account limits.
 
-Install and sign in to at least one current Codex or Claude Code CLI before using
+Install and sign in to at least one current Copilot, Codex, or Claude Code CLI before using
 AI features. Orbis checks your executable search path, common user-local install
 locations, and Node installations managed by nvm, fnm, or mise automatically.
 On macOS it also detects the Codex CLI bundled inside Codex or ChatGPT, including
 apps installed in your home Applications folder. Explicit `ORBIS_CODEX` and
-`ORBIS_CLAUDE` settings take precedence. Restart Orbis after installing an agent.
+`ORBIS_CLAUDE` and `ORBIS_COPILOT` settings take precedence. On Windows it also
+checks common npm, WinGet, and Volta locations. An npm-installed CLI still needs
+its own working Node installation; Orbis itself needs no separate Python or Node.
+Restart Orbis after installing an agent. For Copilot, sign in with `copilot login`
+in your terminal; signing in to VS Code alone does not authenticate the CLI.
 
 Model and effort options come from the installed CLI, including provider-specific
 model IDs. New choices use that CLI's configured model and medium effort when
@@ -31,11 +35,22 @@ upstream development. See [macOS verification](MAC_VERIFICATION.md) for the exac
 coverage and limits. This is an unsigned, unnotarized preview; automatic updates
 are not included.
 
+The Windows x64 preview includes a bundled backend and a per-user NSIS installer.
+Local reading, imported libraries, saved drafts, CLI discovery, and owned-process
+cleanup were exercised on Windows. The Copilot SDK was exercised with a synthetic
+CLI; the user also confirmed real-paper import, highlighted questions, and
+persistence in their installed app. Windows Google sign-in/sync is not part of
+this verification. Code signing and automatic updates remain deferred.
+See [Windows verification](WINDOWS_PORT.md).
+
 ## Your first launch
 
 1. On macOS, copy `Orbis.app` from the disk image to Applications and open it.
    On Ubuntu, make the AppImage executable and open it, or install the Debian
-   package. Development previews must use their own `ORBIS_USER_DATA` directory.
+   package. On Windows, run `Orbis-2.1.0-beta.1-win-x64.exe` and choose a per-user
+   installation folder. It needs no administrator access. The unsigned preview
+   may trigger a Windows reputation warning; no security settings need changing.
+   Development previews must use their own `ORBIS_USER_DATA` directory.
 2. A fresh installation starts with an empty library. To bring an existing library,
    open **Local library → Import existing Orbis library** and select the folder
    containing `data/graph.json` and `papers/`. Import copies all graphs, notes,
@@ -52,6 +67,7 @@ shows the authoritative path:
 
 - macOS: `~/Library/Application Support/Orbis/Profile/Library`
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/Orbis/Profile/Library`
+- Windows: `%APPDATA%\Orbis\Profile\Library`
 
 Upgrading from an earlier preview copies the existing library and sync history
 automatically, then re-encrypts the saved Google connection and recovery key under
@@ -62,6 +78,18 @@ launches use the Orbis profile without copying the old data again.
 The terminal launcher has separate workspace defaults; importing does not make
 it share the desktop app's library. Back up the whole library folder with Orbis
 closed. Never put the credential file or recovery key in a public repository.
+
+### Windows updates and removal
+
+Save your work and quit Orbis before running an updated installer or uninstalling
+through Windows Settings. Setup refuses to continue while Orbis is running,
+rather than forcibly closing it. Silent installation returns exit code `2` in that case;
+exit code `3` means the running-process check failed.
+
+An update replaces the application, not your library. Uninstall removes the
+application and shortcuts but retains `%APPDATA%\Orbis`, including the library.
+Reinstalling opens that retained profile. Removing personal library data is a
+separate, deliberate action; back it up first.
 
 ## Connect Google Drive
 
@@ -156,7 +184,7 @@ it does not delete Drive data or revoke the app in Google Account settings.
 
 ## Build installers
 
-Build on the target OS and CPU architecture from a clean application export.
+Build on the target OS and CPU architecture, preferably from a clean application export.
 Python 3.12, uv, and Node 22 are the tested build tools. Exporting creates an empty
 library without modifying the personal library in your source checkout:
 
@@ -172,8 +200,49 @@ npm run desktop:build
 ```
 
 Installers are written to `release/desktop/`: DMG/ZIP on macOS and AppImage/DEB on
-Linux. The manual **Build Orbis desktop previews** GitHub Actions workflow provides
-native runners for both platforms and performs the same clean export. The build
-script rejects a populated graph. Private historical handoff documents, credentials,
+Linux, and `Orbis-2.1.0-beta.1-win-x64.exe` on Windows. The manual **Build Orbis desktop
+previews** GitHub Actions workflow has macOS, Linux, and Windows x64 jobs.
+The Windows job builds a clean export, checks installer lifecycle behavior, and
+uploads an unsigned installer with SHA-256 checksums; it does not publish a release.
+The backend build stages an empty graph and omits the import queue and source maps,
+without replacing the graph in the checkout. Private historical handoff documents, credentials,
 and Git history are excluded from exports. Apple signing and notarization,
 automatic updates, and a public OAuth rollout remain release work.
+
+### Windows development and packaging
+
+From your existing checkout, with Node 22 and uv available in PowerShell:
+
+```powershell
+uv sync --locked --python 3.12
+npm ci
+$env:ORBIS_USER_DATA = Join-Path $env:TEMP 'Orbis-desktop-development'
+npm run desktop:dev
+```
+
+The development profile is separate from the installed app and browser library.
+Close the app, then run `npm run desktop:build` to create the x64 installer.
+For a no-install check, open `release\desktop\win-unpacked\Orbis.exe` and keep
+the entire `win-unpacked` folder together. Remove `ORBIS_USER_DATA` from your
+terminal environment when you no longer want the development profile override.
+
+`npm run desktop:backend` obtains pinned PyInstaller through uv. If build-tool
+downloads fail TLS verification, fix the download/certificate path rather than
+disabling verification. With PyInstaller 6.22.3 already installed in `.venv`,
+the equivalent backend step is `.\.venv\Scripts\python.exe scripts\build_desktop_backend.py`;
+then run `npm exec -- electron-builder --win --x64 --publish never` after the frontend build.
+
+For the isolated native UI check, set `$env:ORBIS_NATIVE_SMOKE_AGENT = 'copilot'`
+and run `node desktop\tests\native-smoke.mjs .\release\desktop\win-unpacked\Orbis.exe`.
+It creates synthetic libraries, uses a credential-free CLI fixture, and prints
+the retained screenshot/results directory. It does not call a model provider.
+
+After building the frontend and backend, run `npm run test:installer` on Windows.
+It builds two temporary versions under a unique QA app identity, installs into
+a path containing spaces and Unicode, checks shortcuts, and exercises upgrade,
+uninstall, and reinstall with synthetic reading data. It also checks that setup
+refuses to terminate a running app. Your installed Orbis identity and personal
+library are not used; no Google sign-in or paid model call is made.
+Successful runs remove the QA installation and temporary profiles, leaving
+`build\installer-check\result.json` and a screenshot. Failed runs retain their
+isolated files for diagnosis and attempt to remove the QA installation.

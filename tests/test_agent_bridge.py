@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -115,6 +116,16 @@ class IsolatedInsertionTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
+    def test_isolated_workflow_uses_a_working_managed_python_command(self):
+        executable = "python" if os.name == "nt" else "python3"
+        with IsolatedInsertion(self.root) as insertion:
+            workflow = (insertion.workspace / "prompts/insert_paper.md").read_text(encoding="utf-8")
+            self.assertIn(executable + " tools/build_data_js.py", workflow)
+            env = {**os.environ, "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")}
+            result = subprocess.run([executable, "tools/build_data_js.py"], cwd=insertion.workspace,
+                                    env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_rejects_short_new_paper_summary_without_mutating_library(self):
         before = (self.root / 'data/graph.json').read_bytes()
         with IsolatedInsertion(self.root) as insertion:
@@ -204,6 +215,23 @@ class IsolatedInsertionTests(unittest.TestCase):
         self.assertEqual(applied, graph)
         self.assertTrue(
             (self.root / "papers" / "test2026-isolated.md").exists())
+
+    def test_manual_import_rejects_date_only_arxiv_metadata_before_apply(self):
+        graph_before = (self.root / "data/graph.json").read_bytes()
+        mirror_before = (self.root / "data/graph.js").read_bytes()
+        with IsolatedInsertion(self.root) as insertion:
+            graph, paper_id = self.write_valid_output(insertion)
+            paper = next(node["paper"] for node in graph["nodes"] if node["id"] == paper_id)
+            paper["arxiv"].update(submitted_at="2026-03-13", updated_at="2026-03-13")
+            atomic_write_graph(insertion.workspace, graph)
+            record = {"canonical_url": self.record["canonical_url"]}
+            errors = insertion.verify_inserted(record, paper_id)
+            for field in ("submitted_at", "updated_at"):
+                self.assertTrue(any(f"arxiv.{field}" in error and "datetime" in error
+                                    for error in errors), errors)
+        self.assertEqual((self.root / "data/graph.json").read_bytes(), graph_before)
+        self.assertEqual((self.root / "data/graph.js").read_bytes(), mirror_before)
+        self.assertFalse((self.root / "papers/test2026-isolated.md").exists())
 
     def test_blog_insertion_with_unknown_metadata_and_source_attestation(self):
         record = {"canonical_url": "https://example.org/blog/world-models", "source_kind": "blog"}
@@ -592,7 +620,7 @@ class QueueStateTests(unittest.TestCase):
         "tools.agent_bridge.shutil.which",
         side_effect=lambda command: f"/usr/bin/{command}",
     )
-    @patch("tools.agent_bridge.subprocess.run",
+    @patch("tools.agent_bridge.run_agent",
            return_value=subprocess.CompletedProcess([], 0, stdout='[{"name":"fixture-mcp"}]'))
     def test_codex_command_uses_local_sandbox_and_schema(self, _probe, _which):
         with tempfile.TemporaryDirectory() as workspace:

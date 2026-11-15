@@ -22,6 +22,7 @@ try:
         validate_full_text_source,
         agent_environment,
         stop_agent,
+        start_agent,
     )
 except ModuleNotFoundError:  # Imported as tools.* by tests.
     from tools.agent_bridge import (
@@ -38,6 +39,7 @@ except ModuleNotFoundError:  # Imported as tools.* by tests.
         validate_full_text_source,
         agent_environment,
         stop_agent,
+        start_agent,
     )
 
 
@@ -79,14 +81,13 @@ def run_revalidation(record, prior, agent_id, agent_label, verbose=False):
             read_only=True,
         )
         try:
-            proc = subprocess.Popen(
+            proc = start_agent(
                 command,
                 cwd=str(insertion.workspace),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=agent_environment(),
-                start_new_session=True,
             )
         except OSError as exc:
             return None, f"could not launch {agent_label}: {exc}"
@@ -184,7 +185,7 @@ def parse_args(argv=None):
             "lack full-text source attestations"))
     parser.add_argument("--limit", type=int)
     parser.add_argument("--only", action="append", default=[])
-    parser.add_argument("--agent", choices=("claude", "codex"))
+    parser.add_argument("--agent", choices=("claude", "codex", "copilot"))
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--stop-on-error", action="store_true")
     return parser.parse_args(argv)

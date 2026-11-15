@@ -28,6 +28,42 @@ class GraphValidatorTests(unittest.TestCase):
         self.assertIn(
             "window.ORBIS_DATA = ", render_mirror(self.graph))
 
+    def graph_with_arxiv_metadata(self):
+        graph = copy.deepcopy(self.graph)
+        paper = next(node["paper"] for node in graph["nodes"] if node["type"] == "paper")
+        paper["arxiv"] = {
+            "id": "2603.13594",
+            "canonical_url": "https://arxiv.org/abs/2603.13594",
+            "submitted_at": "2026-03-13T21:09:39Z",
+            "updated_at": "2026-03-13T21:09:39Z",
+            "categories": ["cs.AI"],
+            "primary_category": "cs.AI",
+            "query_id": "test",
+        }
+        return graph, paper["arxiv"]
+
+    def test_arxiv_dates_accept_timezone_aware_datetimes_without_rewriting(self):
+        for value in ("2026-03-13T21:09:39Z", "2026-03-13T21:09:39.123456789Z",
+                      "2026-03-14T02:39:39+05:30", "2026-03-13T17:09:39-0400",
+                      "2024-02-29T12:34Z"):
+            with self.subTest(value=value):
+                graph, arxiv = self.graph_with_arxiv_metadata()
+                arxiv.update(submitted_at=value, updated_at=value)
+                before = copy.deepcopy(graph)
+                self.assertEqual(validate(graph), [])
+                self.assertEqual(graph, before)
+
+    def test_arxiv_dates_reject_date_only_naive_and_invalid_datetimes(self):
+        for field in ("submitted_at", "updated_at"):
+            for value in ("2026-03-13", "2026-03-13T21:09:39", "2026-03-13 21:09:39Z",
+                          "2026-02-29T21:09:39Z", "2026-03-13T25:09:39Z", "", None, 123):
+                with self.subTest(field=field, value=value):
+                    graph, arxiv = self.graph_with_arxiv_metadata()
+                    arxiv[field] = value
+                    errors = validate(graph)
+                    self.assertTrue(any(f"arxiv.{field}" in error and "datetime" in error
+                                        for error in errors), errors)
+
     def test_malformed_nested_values_are_reported_without_crashing(self):
         graph = copy.deepcopy(self.graph)
         graph["nodes"][0]["id"] = []

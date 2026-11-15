@@ -10,13 +10,17 @@ import {
 import {
   ArrowLeft,
   BookOpen,
+  CircleStop,
   ExternalLink,
   FilePlus2,
   Orbit,
+  LoaderCircle,
   PanelLeft,
   Upload,
 } from 'lucide-react';
 import { useWorkspaceStore } from '../store/workspaceStore';
+import type { GraphNode } from '../domain/schema';
+import { cancelAgentInsertion } from '../services/agentBridge';
 import {
   attachOriginal,
   documentRequest,
@@ -47,7 +51,35 @@ export default function PaperWorkspace() {
   const openResearch = useWorkspaceStore((state) => state.openResearch);
   const dirty = useWorkspaceStore((state) => state.dirty);
   const save = useWorkspaceStore((state) => state.save);
-  const node = graph.nodes.find((item) => item.id === workspace.nodeId);
+  const setAddPaperOpen = useWorkspaceStore((state) => state.setAddPaperOpen);
+  const paperImport = useWorkspaceStore((state) => state.paperImport);
+  const pending = paperImport?.id === workspace.importId ? paperImport : null;
+  const savedNode = graph.nodes.find((item) => item.id === workspace.nodeId);
+  // Pending metadata belongs only to the reader, never to the graph or its drafts.
+  const node: GraphNode | undefined =
+    savedNode ??
+    (pending
+      ? {
+          id: pending.id,
+          type: 'paper',
+          label: pending.url,
+          status: 'proposed',
+          origin: 'agent',
+          paper: {
+            title: pending.url,
+            url: pending.url,
+            source_kind: pending.sourceKind,
+            authors: [],
+            year: null,
+            venue: '',
+            summary: '',
+            key_findings: [],
+          },
+        }
+      : undefined);
+  const previewOnly = !savedNode && Boolean(pending);
+  const importRunning = pending?.status === 'starting' || pending?.status === 'running';
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [tab, setTab] = useState<PaperTab>(workspace.tab ?? 'Summary');
   const [summaryRequest, setSummaryRequest] = useState<{ text: string; nonce: number }>();
   const [listing, setListing] = useState<DocumentListing>({
@@ -93,12 +125,13 @@ export default function PaperWorkspace() {
   );
 
   const reload = useCallback(async () => {
+    if (previewOnly) return { documents: [], annotations: [] };
     const value = await documentRequest<DocumentListing>(
       `documents?node_id=${encodeURIComponent(workspace.nodeId)}`,
     );
     setListing(value);
     return value;
-  }, [workspace.nodeId]);
+  }, [workspace.nodeId, previewOnly]);
   const registerDraft = useCallback((flush: () => Promise<void>) => {
     flushDraft.current = flush;
   }, []);
@@ -128,8 +161,12 @@ export default function PaperWorkspace() {
   }, [workspace.nonce, workspace.tab]);
 
   useEffect(() => {
+    if (previewOnly) {
+      setLoading(false);
+      return;
+    }
     let stopped = false;
-    setLoading(true);
+    setLoading(!documentId);
     void (async () => {
       try {
         const [value, notes, activity] = await Promise.all([
@@ -145,10 +182,12 @@ export default function PaperWorkspace() {
           b.retrieved_at.localeCompare(a.retrieved_at),
         )[0];
         const initial =
-          value.documents.find((item) => item.id === workspace.documentId) ?? latest;
+          value.documents.find(
+            (item) => item.id === (workspace.documentId ?? documentId),
+          ) ?? latest;
         if (initial) {
           setDocumentId(initial.id);
-          setPage(workspace.page ?? initial.last_page ?? 1);
+          if (initial.id !== documentId) setPage(workspace.page ?? initial.last_page ?? 1);
         }
         setFetchJob(
           activity.jobs.find(
@@ -167,9 +206,37 @@ export default function PaperWorkspace() {
     return () => {
       stopped = true;
     };
-    // The workspace is keyed by paper; subsequent nonce changes are citation jumps.
+    // Keep an already-open original and its position when a preview becomes a saved paper.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reload, workspace.nodeId]);
+  }, [reload, workspace.nodeId, previewOnly]);
+
+  useEffect(() => {
+    if (!previewOnly || !pending?.jobId) return;
+    let stopped = false;
+    void (async () => {
+      try {
+        const job = await documentRequest<ActivityJob>('documents/preview', {
+          import_job_id: pending.jobId,
+        });
+        if (stopped) return;
+        setFetchJob(job);
+        if (job.status === 'completed' && job.document_id) {
+          const original = await documentRequest<OriginalDocument>(
+            `documents/${job.document_id}`,
+          );
+          if (stopped) return;
+          setListing({ documents: [original], annotations: [] });
+          setDocumentId(original.id);
+        }
+      } catch (failure) {
+        if (!stopped)
+          setError(`Original preview could not be opened: ${(failure as Error).message}`);
+      }
+    })();
+    return () => {
+      stopped = true;
+    };
+  }, [previewOnly, pending?.jobId, previewAttempt]);
 
   useEffect(() => {
     if (!workspace.documentId) return;
@@ -186,10 +253,20 @@ export default function PaperWorkspace() {
           const job = value.jobs.find((item) => item.id === fetchJob.id);
           if (!job || stopped) return;
           if (job.status === 'completed') {
-            const updated = await reload();
+            const updated =
+              previewOnly && job.document_id
+                ? {
+                    documents: [
+                      await documentRequest<OriginalDocument>(
+                        `documents/${job.document_id}`,
+                      ),
+                    ],
+                    annotations: [],
+                  }
+                : await reload();
             if (!stopped && job.document_id) {
               setDocumentId(job.document_id);
-              setPage(1);
+              if (job.document_id !== documentId) setPage(1);
               setListing(updated);
             }
           } else if (job.error) setError(job.error);
@@ -204,7 +281,7 @@ export default function PaperWorkspace() {
       stopped = true;
       clearInterval(timer);
     };
-  }, [fetchJob, reload]);
+  }, [fetchJob, reload, previewOnly, documentId]);
 
   useEffect(() => {
     if (!documentId || loading) return;
@@ -483,7 +560,7 @@ export default function PaperWorkspace() {
             </div>
             <button
               className="button secondary"
-              disabled={busy}
+              disabled={busy || previewOnly}
               onClick={() => upload.current?.click()}
             >
               <FilePlus2 size={15} /> Attach file
@@ -513,25 +590,28 @@ export default function PaperWorkspace() {
                   {document.retrieved_at.slice(0, 10)}
                 </span>
                 <span className="reader-transfer-state" role="status">
-                  {document.transfer_status === 'uploading'
-                    ? 'Uploading to Drive…'
-                    : document.transfer_status === 'error'
-                      ? 'Sync needs attention'
-                      : document.remote_available
-                        ? 'Available on Drive'
-                        : 'Saved locally · awaiting Drive sync'}
+                  {previewOnly
+                    ? 'Read-only preview · import in progress'
+                    : document.transfer_status === 'uploading'
+                      ? 'Uploading to Drive…'
+                      : document.transfer_status === 'error'
+                        ? 'Sync needs attention'
+                        : document.remote_available
+                          ? 'Available on Drive'
+                          : 'Saved locally · awaiting Drive sync'}
                 </span>
                 <label className="check-line">
                   <input
                     type="checkbox"
                     checked={document.keep_offline}
-                    disabled={busy}
+                    disabled={busy || previewOnly}
                     onChange={(event) => void run(() => offline(event.target.checked))}
                   />{' '}
                   Keep offline
                 </label>
                 <button
                   className="text-button"
+                  disabled={previewOnly}
                   title="Open a separate read-only copy in your default app"
                   onClick={() => void run(() => openExternal(document))}
                 >
@@ -582,6 +662,7 @@ export default function PaperWorkspace() {
                     onDiscuss={discuss}
                     annotationRequest={annotationRequest}
                     onOpenAnnotation={openAnnotation}
+                    readOnly={previewOnly}
                   />
                 </Suspense>
               ) : (
@@ -591,9 +672,35 @@ export default function PaperWorkspace() {
                   onPage={setPage}
                   onHighlight={highlight}
                   onDiscuss={discuss}
+                  readOnly={previewOnly}
                 />
               )}
             </>
+          ) : previewOnly ? (
+            <div className="reader-empty">
+              <BookOpen size={38} />
+              <h2>
+                {fetchJob?.error ? 'Original preview unavailable' : 'Opening the original…'}
+              </h2>
+              <p>
+                The original downloads separately from the summary. You can start reading as
+                soon as it arrives.
+              </p>
+              {fetchJob?.error && <p className="reader-error">{fetchJob.error}</p>}
+              <button
+                className="button secondary"
+                disabled={!pending?.jobId}
+                onClick={() => {
+                  setError('');
+                  setPreviewAttempt((value) => value + 1);
+                }}
+              >
+                Retry original
+              </button>
+              <a href={node.paper.url} target="_blank" rel="noreferrer">
+                Read on the source website
+              </a>
+            </div>
           ) : (
             <div className="reader-empty">
               <BookOpen size={38} />
@@ -748,11 +855,13 @@ export default function PaperWorkspace() {
                 aria-controls={`paper-panel-${name.replaceAll(' ', '-')}`}
                 aria-selected={tab === name}
                 tabIndex={tab === name ? 0 : -1}
+                disabled={previewOnly && name !== 'Summary'}
                 onClick={() => setTab(name)}
                 onKeyDown={(event) => {
                   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
                     return;
                   event.preventDefault();
+                  if (previewOnly) return;
                   const index = TABS.indexOf(name);
                   const next =
                     event.key === 'Home'
@@ -781,44 +890,99 @@ export default function PaperWorkspace() {
             aria-labelledby="paper-tab-Summary"
             hidden={tab !== 'Summary'}
           >
-            <div className="paper-card-meta">
-              {node.paper.authors.join(', ')}
-              <span>
-                {node.paper.year ?? 'Undated'} · {node.paper.venue}
-              </span>
-            </div>
-            <MarkdownView text={node.paper.summary} />
-            <button
-              className="button secondary"
-              disabled={!document?.available || document.text_status !== 'ready'}
-              onClick={() => {
-                setSummaryRequest({
-                  text: 'Regenerate the summary of this paper from its supplied original passages. Propose one summary change for review, covering motivation, background, each framework stage, results with conditions, and author-stated limitations versus inference. Preserve my personal notes and history, and identify missing evidence.',
-                  nonce: (summaryRequest?.nonce ?? 0) + 1,
-                });
-                setTab('Discuss');
-              }}
-            >
-              Regenerate with review
-            </button>
-            {!!node.paper.key_findings.length && (
-              <section>
-                <h3>Key findings</h3>
-                <ul>
-                  {node.paper.key_findings.map((finding) => (
-                    <li key={finding}>{finding}</li>
-                  ))}
-                </ul>
-              </section>
-            )}
-            {sourceNote && (
-              <details className="source-paper-note">
-                <summary>Imported reading note</summary>
-                <p className="research-caption">
-                  Saved at import; reviewed summary updates appear above.
+            {previewOnly && pending ? (
+              <div
+                className="pending-summary"
+                role="status"
+                aria-live="polite"
+                aria-busy={importRunning}
+              >
+                {importRunning && (
+                  <LoaderCircle className="spin" size={24} aria-hidden="true" />
+                )}
+                <h2>
+                  {importRunning
+                    ? 'Preparing your summary'
+                    : pending.status === 'cancelled'
+                      ? 'Import cancelled'
+                      : pending.status === 'excluded'
+                        ? 'Source not added'
+                        : 'Import needs attention'}
+                </h2>
+                <p>
+                  {importRunning
+                    ? 'Keep reading on the left. The summary and proposed connections will appear here when they are ready.'
+                    : 'You can keep reading this preview. Nothing incomplete has been added to the graph.'}
                 </p>
-                <MarkdownView text={sourceNote} />
-              </details>
+                <p className="research-caption">{pending.message}</p>
+                {importRunning ? (
+                  <button
+                    className="button secondary"
+                    disabled={busy || !pending.jobId}
+                    onClick={() => void run(() => cancelAgentInsertion(pending.jobId))}
+                  >
+                    <CircleStop size={15} /> Cancel import
+                  </button>
+                ) : (
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      void navigate(() => {
+                        closePaper();
+                        setAddPaperOpen(true);
+                      })
+                    }
+                  >
+                    Review import
+                  </button>
+                )}
+                <small>
+                  Notes, highlights, and discussion become available after the import is
+                  validated.
+                </small>
+              </div>
+            ) : (
+              <>
+                <div className="paper-card-meta">
+                  {node.paper.authors.join(', ')}
+                  <span>
+                    {node.paper.year ?? 'Undated'} · {node.paper.venue}
+                  </span>
+                </div>
+                <MarkdownView text={node.paper.summary} />
+                <button
+                  className="button secondary"
+                  disabled={!document?.available || document.text_status !== 'ready'}
+                  onClick={() => {
+                    setSummaryRequest({
+                      text: 'Regenerate the summary of this paper from its supplied original passages. Propose one summary change for review, covering motivation, background, each framework stage, results with conditions, and author-stated limitations versus inference. Preserve my personal notes and history, and identify missing evidence.',
+                      nonce: (summaryRequest?.nonce ?? 0) + 1,
+                    });
+                    setTab('Discuss');
+                  }}
+                >
+                  Regenerate with review
+                </button>
+                {!!node.paper.key_findings.length && (
+                  <section>
+                    <h3>Key findings</h3>
+                    <ul>
+                      {node.paper.key_findings.map((finding) => (
+                        <li key={finding}>{finding}</li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {sourceNote && (
+                  <details className="source-paper-note">
+                    <summary>Imported reading note</summary>
+                    <p className="research-caption">
+                      Saved at import; reviewed summary updates appear above.
+                    </p>
+                    <MarkdownView text={sourceNote} />
+                  </details>
+                )}
+              </>
             )}
           </section>
           <section
@@ -828,20 +992,24 @@ export default function PaperWorkspace() {
             aria-labelledby="paper-tab-My-notes"
             hidden={tab !== 'My notes'}
           >
-            <MarkdownNotes
-              label="My notes"
-              value={node.notes ?? ''}
-              onChange={(notes) => updateNode(node.id, { notes })}
-            />
-            <PaperAnnotations
-              annotations={listing.annotations}
-              onOpen={openAnnotation}
-              onSaved={async () => {
-                await reload();
-              }}
-              onDraftFlush={registerAnnotations}
-              annotationRequest={annotationRequest}
-            />
+            {!previewOnly && (
+              <>
+                <MarkdownNotes
+                  label="My notes"
+                  value={node.notes ?? ''}
+                  onChange={(notes) => updateNode(node.id, { notes })}
+                />
+                <PaperAnnotations
+                  annotations={listing.annotations}
+                  onOpen={openAnnotation}
+                  onSaved={async () => {
+                    await reload();
+                  }}
+                  onDraftFlush={registerAnnotations}
+                  annotationRequest={annotationRequest}
+                />
+              </>
+            )}
           </section>
           <section
             className="paper-tab-panel paper-discuss-panel"
@@ -850,14 +1018,16 @@ export default function PaperWorkspace() {
             aria-labelledby="paper-tab-Discuss"
             hidden={tab !== 'Discuss'}
           >
-            <ResearchDesk
-              comparison={false}
-              paperId={node.id}
-              selectedPassage={selectedPassage}
-              onCitation={citation}
-              onDraftFlush={registerDraft}
-              draftRequest={summaryRequest}
-            />
+            {!previewOnly && (
+              <ResearchDesk
+                comparison={false}
+                paperId={node.id}
+                selectedPassage={selectedPassage}
+                onCitation={citation}
+                onDraftFlush={registerDraft}
+                draftRequest={summaryRequest}
+              />
+            )}
           </section>
           <section
             className="paper-tab-panel"

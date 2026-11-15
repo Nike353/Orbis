@@ -1,13 +1,16 @@
 """Personal data initialization, separate from the distributable application."""
-import fcntl
 import json
 import re
 from pathlib import Path
 
+import portalocker
+
 try:
     from agent_bridge import atomic_write_graph, atomic_write_json, utc_now
+    from file_lock import lock_file
 except ModuleNotFoundError:
     from tools.agent_bridge import atomic_write_graph, atomic_write_json, utc_now
+    from tools.file_lock import lock_file
 
 
 def initialize_workspace(root):
@@ -24,13 +27,10 @@ def initialize_workspace(root):
 
 
 def lock_workspace(root):
-    handle = (Path(root) / ".server.lock").open("a")
     try:
-        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        handle.close()
-        raise SystemExit("This workspace is already open in another Orbis server.")
-    return handle
+        return lock_file(Path(root) / ".server.lock", blocking=False)
+    except portalocker.AlreadyLocked as error:
+        raise SystemExit("This workspace is already open in another Orbis server.") from error
 
 
 def ensure_library_writable(root):

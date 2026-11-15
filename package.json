@@ -21,7 +21,8 @@
     "desktop:dev": "npm run build && electron .",
     "desktop:backend": "uv run --locked --python 3.12 --with pyinstaller==6.22.3 python scripts/build_desktop_backend.py",
     "desktop:build": "npm run build && npm run desktop:backend && electron-builder",
-    "test:desktop": "node --test desktop/tests/*.test.mjs"
+    "test:desktop": "node --test desktop/tests/*.test.mjs",
+    "test:installer": "node desktop/tests/installer-smoke.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.2",
@@ -113,6 +114,25 @@
       ],
       "category": "Education",
       "maintainer": "Orbis contributors"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signExecutable": false
+    },
+    "nsis": {
+      "include": "desktop/windows-installer.nsh",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
     },
     "artifactName": "Orbis-${version}-${os}-${arch}.${ext}"
   }
