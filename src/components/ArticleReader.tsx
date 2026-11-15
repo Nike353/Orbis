@@ -12,11 +12,13 @@ export function ArticleReader({
   onPage,
   onDiscuss,
   onHighlight,
+  readOnly = false,
 }: {
   document: OriginalDocument;
   page: number;
   onPage: (page: number) => void;
   onDiscuss: (selection: SelectedPassage) => void;
+  readOnly?: boolean;
   onHighlight: (
     selection: SelectedPassage,
     comment?: boolean,
@@ -125,7 +127,7 @@ export function ArticleReader({
       >
         <p className="article-source-text">{current?.text ?? 'Opening article…'}</p>
       </div>
-      {selection && (
+      {!readOnly && selection && (
         <div className="selection-actions">
           <button className="button secondary" onClick={() => void highlight(true)}>
             Highlight and comment

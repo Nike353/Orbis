@@ -1,6 +1,8 @@
 name: Build Orbis desktop previews
 on:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   desktop:
     strategy:
@@ -38,3 +40,69 @@ jobs:
             ${{ runner.temp }}/orbis-build/orbis/release/desktop/*.zip
             ${{ runner.temp }}/orbis-build/orbis/release/desktop/*.AppImage
             ${{ runner.temp }}/orbis-build/orbis/release/desktop/*.deb
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+      - run: uv sync --locked --python 3.12
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:unit
+      - run: npm run test:desktop
+      - name: Check Windows startup and owned CLI processes
+        run: |
+          $env:PYTHONPATH = "$PWD\tests;$PWD"
+          .\.venv\Scripts\python.exe -m unittest test_start test_agent_bridge test_agent_process test_copilot_adapter test_serve test_desktop_runtime
+      - name: Export an empty-library application
+        run: |
+          python scripts\package_release.py --output "$env:RUNNER_TEMP\orbis-source.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m zipfile -e "$env:RUNNER_TEMP\orbis-source.zip" "$env:RUNNER_TEMP\orbis-build"
+      - run: npm ci
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+      - run: npm run build
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+      - run: npm run desktop:backend
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+      - name: Check the frozen Windows service
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+        run: |
+          $env:PYTHONPATH = "$PWD\tests;$PWD"
+          $env:ORBIS_TEST_DESKTOP_BACKEND = "$PWD\build\desktop-backend\orbis-server\orbis-server.exe"
+          .\.venv\Scripts\python.exe -m unittest test_desktop_runtime
+      - name: Build the unsigned Windows installer without publishing
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+        run: npm exec -- electron-builder --win --x64 --publish never
+      - name: Check isolated install, upgrade, uninstall and reinstall
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+        run: npm run test:installer
+      - name: Write installer checksums
+        working-directory: ${{ runner.temp }}/orbis-build/orbis
+        run: |
+          Get-ChildItem release\desktop\*.exe | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)"
+          } | Set-Content release\desktop\SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orbis-desktop-windows-x64
+          path: |
+            ${{ runner.temp }}/orbis-build/orbis/release/desktop/*.exe
+            ${{ runner.temp }}/orbis-build/orbis/release/desktop/SHA256SUMS.txt
+            ${{ runner.temp }}/orbis-build/orbis/build/installer-check/result.json

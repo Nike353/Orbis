@@ -56,7 +56,9 @@ class ResearchTests(unittest.TestCase):
         atomic_write_graph(self.root, self.graph)
         self.store = ResearchStore(self.root, threading.Lock(), threading.Lock(), APP)
         command = f'"{sys.executable}" "{APP / "tests/fixtures/research_agent.py"}"'
-        self.env = patch.dict(os.environ, {"ORBIS_CODEX": command, "ORBIS_CLAUDE": command})
+        copilot = subprocess.list2cmdline([sys.executable, str(APP / "tests" / "fixtures" / "copilot_agent.py")])
+        self.env = patch.dict(os.environ, {"ORBIS_CODEX": command, "ORBIS_CLAUDE": command,
+                                          "ORBIS_COPILOT": copilot})
         self.env.start()
 
     def tearDown(self):
@@ -77,7 +79,7 @@ class ResearchTests(unittest.TestCase):
         return self.store.find(self.store.read(), session["id"], turn["id"])[1]
 
     def test_both_cli_protocols_persist_complete_comparisons_without_changing_graph(self):
-        for agent in ("codex", "claude"):
+        for agent in ("codex", "claude", "copilot"):
             session = self.session(["Input", "Custom criterion"])
             turn = self.run_turn(session, agent=agent)
             self.assertEqual(turn["status"], "completed", turn)
@@ -223,6 +225,26 @@ class ResearchTests(unittest.TestCase):
         turns = self.store.read()["sessions"][0]["turns"]
         self.assertEqual(turns[0], completed)
         self.assertEqual(turns[1]["status"], "interrupted")
+
+    def test_cancelling_a_started_agent_cleans_its_temporary_files_for_both_protocols(self):
+        for agent in ("codex", "claude"):
+            marker = self.root / (agent + "-started")
+            session = self.session()
+            with patch.dict(os.environ, {"ORBIS_TEST_AGENT_STARTED": str(marker)}):
+                turn = self.store.start(session["id"], {"question": "TEST_STARTED_WAIT", "agent": agent, "base_revision": 0})
+                deadline = time.monotonic() + 8
+                while not marker.exists() and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                self.assertTrue(marker.exists(), "The CLI did not reach its running state")
+                directory = Path(marker.read_text(encoding="utf-8"))
+                self.store.cancel(turn["id"])
+                self.assertTrue(self.store.run_lock.acquire(timeout=8), "Cancellation did not finish")
+                self.store.run_lock.release()
+            saved = self.store.find(self.store.read(), session["id"], turn["id"])[1]
+            self.assertEqual(saved["status"], "cancelled", saved)
+            self.assertEqual(saved["error"], "Cancelled by user.")
+            self.assertFalse(directory.exists(), "Agent files must be released before temporary-directory cleanup")
+            self.assertEqual(self.store.graph(), self.graph)
 
     def test_change_contract_rejects_unknown_fields_invalid_references_and_duplicates(self):
         valid = {"action": "connect", "source_id": "paper:a", "target_id": "cluster:test", "relation": "belongs_to", "confidence": 0.8, "evidence": "Section 2", "reason": "Shared problem"}

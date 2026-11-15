@@ -47,6 +47,7 @@ export default function PdfReader({
   onDiscuss,
   annotationRequest,
   onOpenAnnotation,
+  readOnly = false,
 }: {
   document: OriginalDocument;
   page: number;
@@ -60,6 +61,7 @@ export default function PdfReader({
   onDiscuss: (selection: SelectedPassage) => void;
   annotationRequest?: { id: string; nonce: number } | null;
   onOpenAnnotation: (annotation: PaperAnnotation, edit?: boolean) => void;
+  readOnly?: boolean;
 }) {
   const viewportElement = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
@@ -779,7 +781,7 @@ export default function PdfReader({
           )}
         </div>
       )}
-      {selection && selectionReady && (
+      {!readOnly && selection && selectionReady && (
         <div className="selection-actions">
           <span>
             {selection.passage.text.slice(0, 90)}

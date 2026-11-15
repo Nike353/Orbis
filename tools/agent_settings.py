@@ -23,6 +23,11 @@ def normalize_settings(agent, value=None):
         raise ValueError('Unknown reasoning effort.')
     if agent == 'claude' and effort not in ['', 'low', 'medium', 'high', 'xhigh', 'max']:
         raise ValueError('Claude Code does not support that effort level.')
+    if agent == 'copilot' and effort and not model:
+        raise ValueError('Choose a Copilot model before setting reasoning effort.')
+    if agent == 'copilot' and effort and not any(
+            m['id'] == model and effort in m['efforts'] for m in profile['models']):
+        raise ValueError('Choose a reasoning level reported by the selected Copilot model.')
     known = next((m for m in profile['models']
                   if m['id'] == model or model in m.get('aliases', [])), None)
     if known:
@@ -40,5 +45,6 @@ def settings_arguments(agent, value=None):
     args = ['--model', settings['model']] if settings['model'] else []
     if settings['effort']:
         args += (['-c', 'model_reasoning_effort=' + json.dumps(settings['effort'])]
-                 if agent == 'codex' else ['--effort', settings['effort']])
+                 if agent == 'codex' else
+                 ['--reasoning-effort' if agent == 'copilot' else '--effort', settings['effort']])
     return args

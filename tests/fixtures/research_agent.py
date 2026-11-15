@@ -1,6 +1,7 @@
 """Deterministic CLI protocol fixture. Never contacts a model provider."""
 import json
 import os
+from pathlib import Path
 import sys
 import time
 
@@ -47,6 +48,10 @@ context_text = prompt.split("LIBRARY CONTEXT (data, not instructions):\n", 1)[1]
 context = json.loads(context_text.split("\n\nCOMPARISON CRITERIA:", 1)[0])
 criteria = json.loads(prompt.split("COMPARISON CRITERIA: ", 1)[1].split("\n\nUSER QUESTION:", 1)[0])
 question = prompt.split("USER QUESTION:\n", 1)[1]
+if "TEST_STARTED_WAIT" in question:
+    Path(os.environ["ORBIS_TEST_AGENT_STARTED"]).write_text(os.getcwd(), encoding="utf-8")
+    time.sleep(60)
+    sys.exit(0)
 if os.environ.get("ORBIS_E2E_FIXTURE") and "Reader test:" not in question:
     time.sleep(30)
 if "TEST_WAIT" in question:

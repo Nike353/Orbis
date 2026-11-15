@@ -9,6 +9,7 @@ from urllib.request import Request, urlopen
 from unittest.mock import patch
 
 from tools import serve
+from tools.activity import ActivityStore
 from tools.agent_bridge import atomic_write_graph
 from tools.documents import DocumentStore
 from tools.research import ResearchStore
@@ -31,7 +32,8 @@ class DocumentsApiTests(unittest.TestCase):
         atomic_write_graph(root, graph)
         documents = DocumentStore(root)
         research = ResearchStore(root, threading.Lock(), threading.Lock())
-        self.patch = patch.multiple(serve, ROOT=root, document_store=documents, research_store=research)
+        self.patch = patch.multiple(serve, ROOT=root, document_store=documents, research_store=research,
+                                    activity_store=ActivityStore(documents))
         self.patch.start()
         self.addCleanup(self.patch.stop)
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
@@ -73,6 +75,8 @@ class DocumentsApiTests(unittest.TestCase):
             ("/api/documents?node_id=paper:test", None, {"Origin": "https://evil.example"}, 403),
             ("/api/documents/../../../etc/passwd/original", None, {}, 404),
             ("/api/documents/fetch", {"node_id": "paper:missing"}, {}, 404),
+            ("/api/documents/preview", {"import_job_id": "missing", "url": "https://example.org"}, {}, 404),
+            ("/api/documents/preview", {"import_job_id": "a" * 32}, {"Origin": "https://evil.example"}, 403),
             ("/api/annotations", {"document_id": "../outside"}, {}, 400),
             ("/api/annotations", {"document_id": []}, {}, 400),
         ):
@@ -81,3 +85,12 @@ class DocumentsApiTests(unittest.TestCase):
                     self.request(route, body, headers=headers)
                 self.assertEqual(error.exception.code, status)
                 error.exception.close()
+
+    def test_import_preview_uses_only_the_source_of_an_existing_import_job(self):
+        identifier = serve.activity_store.start(
+            {"canonical_url": "https://example.org/original.pdf"}, "", "codex", {})
+        with patch.object(serve.document_store, "fetch_import", return_value={"status": "queued"}) as preview:
+            with self.request("/api/documents/preview", {
+                    "import_job_id": identifier, "url": "https://127.0.0.1/private"}) as response:
+                self.assertEqual(json.load(response)["status"], "queued")
+            self.assertEqual(preview.call_args.args[0]["url"], "https://example.org/original.pdf")

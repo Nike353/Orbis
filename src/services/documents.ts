@@ -68,6 +68,7 @@ export interface ActivityJob {
   hint?: string;
   source_kind?: 'paper' | 'blog' | 'website';
   settings?: { model: string; effort: string };
+  import_job_id?: string;
 }
 
 export async function documentRequest<T>(path: string, body?: unknown): Promise<T> {

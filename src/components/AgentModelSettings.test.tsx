@@ -72,6 +72,30 @@ it('offers new Claude aliases and only the effort levels reported for them', asy
   expect(screen.getByLabelText('Effort')).toHaveValue('high');
 });
 
+it('offers Copilot models and only their reported reasoning levels', async () => {
+  const user = userEvent.setup();
+  render(
+    <AgentModelSettings
+      agent={{
+        id: 'copilot',
+        label: 'GitHub Copilot',
+        available: true,
+        default_efforts: [],
+        models: [
+          { id: 'copilot-test-model', label: 'Test model', efforts: ['low', 'high'] },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByLabelText('Effort')).toHaveValue('');
+  await user.selectOptions(screen.getByLabelText('Model'), 'copilot-test-model');
+  expect(screen.getByRole('option', { name: 'high' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'medium' })).not.toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText('Effort'), 'high');
+  await user.selectOptions(screen.getByLabelText('Model'), '');
+  expect(screen.getByLabelText('Effort')).toHaveValue('');
+});
+
 it('displays an old unprefixed Sol preference as its current provider model', async () => {
   const user = userEvent.setup();
   const first = render(<AgentModelSettings agent={codex} />);

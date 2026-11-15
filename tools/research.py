@@ -18,7 +18,7 @@ from pathlib import Path
 try:
     from agent_bridge import (BridgeContractError, atomic_write_json,
                               atomic_write_graph, resolve_agent, utc_now, normalize_settings, settings_arguments,
-                              agent_environment as research_environment, agent_profile, codex_tool_restrictions, stop_agent,
+                              agent_environment as research_environment, agent_profile, codex_tool_restrictions, stop_agent, start_agent,
                               validate_paper_summary, state_fingerprint)
     from build_data_js import validate
     from documents import DocumentStore, normalized_text, evidence_excerpt
@@ -26,7 +26,7 @@ try:
 except ModuleNotFoundError:
     from tools.agent_bridge import (BridgeContractError, atomic_write_json,
                                     atomic_write_graph, resolve_agent, utc_now, normalize_settings, settings_arguments,
-                                    agent_environment as research_environment, agent_profile, codex_tool_restrictions, stop_agent,
+                                    agent_environment as research_environment, agent_profile, codex_tool_restrictions, stop_agent, start_agent,
                                     validate_paper_summary, state_fingerprint)
     from tools.build_data_js import validate
     from tools.documents import DocumentStore, normalized_text, evidence_excerpt
@@ -450,6 +450,13 @@ def research_command(agent_id, directory, settings=None):
     overrides = settings_arguments(agent_id, settings)
     schema = directory / "output-schema.json"
     schema.write_text(json.dumps(RESEARCH_SCHEMA), encoding="utf-8")
+    if agent_id == "copilot":
+        try:
+            from copilot_adapter import worker_command
+        except ModuleNotFoundError:
+            from tools.copilot_adapter import worker_command
+        return worker_command(agent["command"], "research", schema,
+                              settings=normalize_settings(agent_id, settings), max_turns=4)
     if agent_id == "codex":
         restrictions = codex_tool_restrictions(agent["command"], read_only=True)
         return [*agent["command"], "exec", *overrides, "--json", "--ephemeral", "--skip-git-repo-check",
@@ -472,6 +479,10 @@ def parse_output(raw, agent_id):
             continue
         if not isinstance(event, dict):
             continue
+        if agent_id == "copilot" and event.get("type") == "copilot.result":
+            if event.get("ok") is not True:
+                failed = str(event.get("error") or "Copilot failed.")
+            result = event.get("structured_output")
         if agent_id == "claude" and event.get("type") == "result":
             if event.get("is_error"):
                 failed = str(event.get("result") or event.get("subtype"))
@@ -687,7 +698,6 @@ class ResearchStore:
 
     def run(self, session, turn, graph, cancelled):
         started = time.monotonic()
-        proc = None
         update = {}
         try:
             context = build_context(self.root, graph, session, turn["question"],
@@ -707,11 +717,9 @@ class ResearchStore:
             with tempfile.TemporaryDirectory(prefix="orbis-research-") as directory:
                 directory = Path(directory)
                 command = research_command(turn["agent"], directory, turn.get("settings"))
-                with (directory / "stdout").open("w+") as out, (directory / "stderr").open("w+") as err:
-                    proc = subprocess.Popen(command, cwd=directory, stdin=subprocess.PIPE,
-                                            stdout=out, stderr=err, text=True,
-                                            env=research_environment(),
-                                            start_new_session=True)
+                with (directory / "stdout").open("w+", encoding="utf-8") as out, (directory / "stderr").open("w+", encoding="utf-8") as err, start_agent(
+                        command, cwd=directory, stdin=subprocess.PIPE,
+                        stdout=out, stderr=err, text=True, env=research_environment()) as proc:
                     # Writing input in a thread allows cancellation even if a broken CLI never reads stdin.
                     def feed():
                         try:
@@ -727,6 +735,7 @@ class ResearchStore:
                             raise ResearchError("Agent exceeded the 10-minute limit. Try a smaller scope.")
                         if os.fstat(out.fileno()).st_size + os.fstat(err.fileno()).st_size > 8 * 1024 * 1024:
                             raise ResearchError("Agent output exceeded the 8 MB limit.")
+                    stop_agent(proc)
                     if cancelled.is_set():
                         raise ResearchError("Cancelled by user.")
                     out.seek(0)
@@ -755,9 +764,6 @@ class ResearchStore:
         except Exception as exc:
             update = {"status": "cancelled" if cancelled.is_set() else "failed", "error": str(exc)[:2000]}
         finally:
-            if proc is not None:
-                stop_agent(proc)
-                proc.wait()
             update.update(finished_at=utc_now(), duration_s=round(time.monotonic() - started, 1))
             update["phase"] = "ready_to_review" if update.get("proposal_status") == "pending" else update["status"]
             try:

@@ -1,5 +1,5 @@
-// Run manually against a packaged executable; uses synthetic data and no provider/Drive.
-import { _electron, expect } from '@playwright/test';
+// Run against a packaged executable or --development; uses no provider/Drive.
+import { _electron, expect as playwrightExpect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
@@ -9,13 +9,24 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const expect = playwrightExpect.configure({ timeout: 15000 });
 const executablePath = process.argv[2];
+const development = process.argv.includes('--development');
+const agentId = process.env.ORBIS_NATIVE_SMOKE_AGENT || 'codex';
+if (!['codex', 'copilot'].includes(agentId))
+  throw new Error('Unsupported smoke-test agent.');
+const modelId = agentId === 'copilot' ? 'test-model' : 'gpt-5.5';
+const python = path.join(
+  root,
+  '.venv',
+  ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']),
+);
 if (!executablePath) throw new Error('Pass the packaged Orbis executable as the argument.');
 const scratch = await mkdtemp(path.join(tmpdir(), 'orbis-native-smoke-'));
 const profile = path.join(scratch, 'ProfileHome');
 const fixture = path.join(scratch, 'SourceLibrary');
 execFileSync(
-  path.join(root, '.venv/bin/python'),
+  python,
   [
     '-c',
     `
@@ -57,31 +68,38 @@ for folder, title in [(root, "Native fixture"), (root / "graphs" / child["id"], 
   ],
   { cwd: root },
 );
-const fixtureCommand = `"${path.join(root, '.venv/bin/python')}" "${path.join(root, 'tests/fixtures/research_agent.py')}"`;
+const fixtureCommand = `"${python}" "${path.join(root, 'tests/fixtures/research_agent.py')}"`;
 const env = {
   ...process.env,
   ORBIS_USER_DATA: profile,
   ORBIS_CODEX: fixtureCommand,
   ORBIS_CLAUDE: fixtureCommand,
-  ORBIS_DEFAULT_AGENT: 'codex',
+  ORBIS_COPILOT:
+    agentId === 'copilot'
+      ? `"${python}" "${path.join(root, 'tests/fixtures/copilot_agent.py')}"`
+      : 'orbis-native-test-missing-agent',
+  ORBIS_DEFAULT_AGENT: agentId,
+  ORBIS_TEST_COPILOT_STARTED: path.join(scratch, 'copilot-started.json'),
 };
 delete env.ELECTRON_RUN_AS_NODE;
 let application;
 const errors = [];
 async function launch() {
-  console.log('Launching isolated packaged app.');
+  console.log(`Launching isolated ${development ? 'development' : 'packaged'} app.`);
   application = await _electron.launch({
     executablePath,
     // The Linux preview uses software WebGL; macOS should exercise its native GPU.
-    args:
-      process.platform === 'linux'
+    args: [
+      ...(development ? [root] : []),
+      ...(process.platform === 'linux'
         ? [
             '--disable-setuid-sandbox',
             '--enable-webgl',
             '--ignore-gpu-blocklist',
             '--use-angle=swiftshader',
           ]
-        : [],
+        : []),
+    ],
     chromiumSandbox: true,
     env,
     timeout: 45000,
@@ -93,7 +111,9 @@ async function launch() {
   await expect(
     page.getByTestId('graph-stage').or(page.locator('.empty-universe')),
   ).toBeVisible();
-  console.log('Packaged renderer is ready.');
+  console.log('Native renderer is ready.');
+  const skip = page.getByRole('button', { name: 'Skip tutorial', exact: true });
+  if (await skip.isVisible()) await skip.click();
   return page;
 }
 async function quit() {
@@ -142,7 +162,7 @@ try {
     preferences: BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences(),
     noSandbox: process.argv.includes('--no-sandbox'),
   }));
-  assert.equal(native.packaged, true);
+  assert.equal(native.packaged, !development);
   assert.equal(native.noSandbox, false);
   for (const key of ['sandbox', 'contextIsolation', 'webSecurity'])
     assert.equal(native.preferences[key], true);
@@ -193,8 +213,8 @@ try {
   );
   console.log('Originals and two independent graphs imported.');
   await page.getByRole('button', { name: 'Add paper', exact: true }).click();
-  await page.getByLabel('Agent', { exact: true }).selectOption('codex');
-  await page.getByLabel('Model', { exact: true }).selectOption('gpt-5.5');
+  await page.getByLabel('Agent', { exact: true }).selectOption(agentId);
+  await page.getByLabel('Model', { exact: true }).selectOption(modelId);
   await page.getByLabel('Effort', { exact: true }).selectOption('high');
   await page.getByRole('button', { name: 'Close add paper dialog' }).click();
   await page.getByRole('button', { name: 'Time', exact: true }).click();
@@ -242,9 +262,26 @@ try {
     'Unsent native discussion draft.',
   );
   await expect(reader.locator('.research-turn')).toHaveCount(1);
-  await expect(reader.getByLabel('Model', { exact: true })).toHaveValue('gpt-5.5');
+  await expect(reader.getByLabel('Model', { exact: true })).toHaveValue(modelId);
   await expect(reader.getByLabel('Effort', { exact: true })).toHaveValue('high');
   console.log('Native reopen preserved notes, drafts, page and model settings.');
+  if (agentId === 'copilot') {
+    await reader.getByRole('textbox', { name: 'Your question' }).fill('TEST_WAIT');
+    await reader.getByRole('button', { name: 'Ask agent', exact: true }).click();
+    await expect
+      .poll(async () => {
+        try {
+          return (await readFile(env.ORBIS_TEST_COPILOT_STARTED, 'utf8')).startsWith('[');
+        } catch (error) {
+          if (error.code === 'ENOENT') return false;
+          throw error;
+        }
+      })
+      .toBe(true);
+    await reader.getByRole('button', { name: 'Stop', exact: true }).click();
+    await expect(reader.locator('.research-turn').last()).toContainText('cancelled');
+    console.log('Native Copilot SDK turn and its waiting CLI descendants cancelled.');
+  }
   await reader.getByRole('button', { name: 'Back to galaxy', exact: true }).click();
   await expect(page.locator('.graph-stage canvas')).toBeVisible();
   await page.getByRole('button', { name: 'Choose graph' }).click();
@@ -256,7 +293,7 @@ try {
   await reader.getByRole('tab', { name: 'My notes', exact: true }).click();
   await expect(reader.locator('.notes-preview')).toContainText('Imported personal notes');
   await reader.getByRole('tab', { name: 'Discuss', exact: true }).click();
-  await expect(reader.getByLabel('Model', { exact: true })).toHaveValue('gpt-5.5');
+  await expect(reader.getByLabel('Model', { exact: true })).toHaveValue(modelId);
   await expect(reader.getByLabel('Effort', { exact: true })).toHaveValue('high');
   await expect(reader.getByRole('textbox', { name: 'Your question' })).toHaveValue('');
   assert.deepEqual(errors, []);
@@ -274,7 +311,8 @@ try {
       {
         version: native.version,
         storage: native.storage,
-        packaged: true,
+        packaged: !development,
+        agent: agentId,
         sandbox: true,
         checks: [
           'empty start',
@@ -289,6 +327,7 @@ try {
           'Keep offline',
           'model/effort across origins and restart',
           'independent graph isolation',
+          ...(agentId === 'copilot' ? ['Copilot SDK turn cancellation'] : []),
         ],
       },
       null,

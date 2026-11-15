@@ -1,5 +1,8 @@
 // Keep the application lock until its backend has released all library locks.
-export function stopBackend(child, { graceMs = 20000, terminateMs = 5000 } = {}) {
+export function stopBackend(
+  child,
+  { graceMs = 20000, terminateMs = 5000, platform = process.platform } = {},
+) {
   if (!child?.pid || child.exitCode !== null || child.signalCode != null)
     return Promise.resolve();
   return new Promise((resolve) => {
@@ -13,6 +16,7 @@ export function stopBackend(child, { graceMs = 20000, terminateMs = 5000 } = {})
       clearTimeout(terminateTimer);
       resolve();
     });
-    child.kill('SIGINT');
+    if (platform === 'win32') child.stdin.end();
+    else child.kill('SIGINT');
   });
 }

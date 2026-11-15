@@ -180,14 +180,16 @@ export function ActivityPanel() {
             {job.kind === 'import' &&
               ['failed', 'cancelled', 'interrupted'].includes(job.status) &&
               job.url &&
-              (job.agent === 'codex' || job.agent === 'claude') && (
+              (job.agent === 'codex' ||
+                job.agent === 'claude' ||
+                job.agent === 'copilot') && (
                 <button
                   className="button secondary"
                   disabled={Boolean(busy)}
                   onClick={() =>
                     void run(job.id, async () => {
                       await runAgentInsertion(
-                        job.agent as 'codex' | 'claude',
+                        job.agent as 'codex' | 'claude' | 'copilot',
                         job.url!,
                         job.hint ?? '',
                         null,

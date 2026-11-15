@@ -4,8 +4,11 @@ version = "2.0.0"
 description = "A local workspace for connected research"
 requires-python = ">=3.12"
 dependencies = [
+    "github-copilot-sdk==1.0.34",
     "nodeenv==1.9.1",
+    "portalocker==3.2.0",
     "pypdf==7.0.0",
+    "pywin32==312; sys_platform == 'win32'",
 ]
 
 [tool.uv]

@@ -158,10 +158,28 @@ async function startBackend() {
     PYTHONUNBUFFERED: '1',
   });
   const executable = app.isPackaged
-    ? path.join(process.resourcesPath, 'backend/orbis-server/orbis-server')
-    : path.join(source, '.venv/bin/python');
+    ? path.join(
+        process.resourcesPath,
+        'backend',
+        'orbis-server',
+        process.platform === 'win32' ? 'orbis-server.exe' : 'orbis-server',
+      )
+    : path.join(
+        source,
+        '.venv',
+        ...(process.platform === 'win32' ? ['Scripts', 'python.exe'] : ['bin', 'python']),
+      );
   const args = [
     ...(app.isPackaged ? [] : [path.join(source, 'desktop/server_boot.py')]),
+    ...(process.platform === 'win32'
+      ? [
+          '--orbis-desktop-supervisor',
+          '--orbis-parent-pid',
+          String(process.pid),
+          '--orbis-parent-start-time',
+          String(process.getCreationTime()),
+        ]
+      : []),
     '--workspace',
     library,
     '--port',
@@ -170,7 +188,8 @@ async function startBackend() {
   backend = spawn(executable, args, {
     cwd: app.isPackaged ? home : source,
     env,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [process.platform === 'win32' ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   });
   base = await new Promise((resolve, reject) => {
     let output = '';

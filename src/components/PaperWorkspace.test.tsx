@@ -17,8 +17,12 @@ vi.mock('./PdfReader', () => ({
   default: ({
     document,
     onHighlight,
+    page,
+    onPage,
   }: {
     document: OriginalDocument;
+    page: number;
+    onPage: (page: number) => void;
     onHighlight: (
       selection: SelectedPassage,
       comment: boolean,
@@ -27,6 +31,8 @@ vi.mock('./PdfReader', () => ({
   }) => (
     <>
       <p>Reading {document.filename}</p>
+      <output aria-label="Current page">{page}</output>
+      <button onClick={() => onPage(3)}>Read page three</button>
       <button
         onClick={() => {
           const version = readerSelection.version;
@@ -48,6 +54,7 @@ vi.mock('./PdfReader', () => ({
 
 beforeEach(() => {
   readerSelection.version = 0;
+  useWorkspaceStore.setState({ paperImport: null, paperWorkspace: null });
 });
 
 afterEach(() => {
@@ -55,6 +62,96 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+
+it('reads the original before the summary is ready and preserves its page through handoff', async () => {
+  const graph = migrateAndValidateGraph(canonicalGraph).graph;
+  const paper = graph.nodes.find((node) => node.type === 'paper')!;
+  const original: OriginalDocument = {
+    id: 'a'.repeat(32),
+    node_id: '',
+    sha256: 'b'.repeat(64),
+    media_type: 'application/pdf',
+    size: 1000,
+    filename: 'preview.pdf',
+    source_url: paper.paper!.url,
+    source_version: '',
+    retrieved_at: '2026-01-01T00:00:00Z',
+    page_count: 3,
+    text_status: 'ready',
+    extraction_error: '',
+    available: true,
+    keep_offline: false,
+    last_page: 1,
+    remote_available: false,
+    transfer_error: '',
+    transfer_status: '',
+    remote_id: '',
+  };
+  const job = {
+    id: 'download',
+    kind: 'document',
+    status: 'completed',
+    document_id: original.id,
+    created_at: '2026-01-01T00:00:00Z',
+  };
+  const json = (value: unknown) => new Response(JSON.stringify(value));
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url === '/api/documents/preview') return json(job);
+      if (url === `/api/documents/${original.id}`) return json(original);
+      if (url.startsWith('/api/documents?node_id=paper'))
+        return json({ documents: [{ ...original, node_id: paper.id }], annotations: [] });
+      if (url.startsWith('/api/notes?')) return json({ text: '' });
+      if (url === '/api/activity') return json({ jobs: [] });
+      if (url.endsWith('/local')) return json({});
+      throw new Error(`Unexpected request: ${url}`);
+    }),
+  );
+  useWorkspaceStore.setState({ graph: { ...graph, nodes: [], edges: [] }, dirty: false });
+  const id = useWorkspaceStore.getState().beginPaperImport(paper.paper!.url, 'paper');
+  useWorkspaceStore
+    .getState()
+    .updatePaperImport(id, { jobId: 'import-job', status: 'running' });
+  render(<PaperWorkspace />);
+  expect(
+    screen.getByRole('heading', { name: 'Preparing your summary' }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'My notes' })).toBeDisabled();
+  const reader = await screen.findByText('Reading preview.pdf');
+  fireEvent.click(screen.getByRole('button', { name: 'Read page three' }));
+  expect(screen.getByLabelText('Current page')).toHaveTextContent('3');
+  expect(useWorkspaceStore.getState().graph?.nodes).toHaveLength(0);
+  await act(async () => {
+    useWorkspaceStore.setState({ graph });
+    useWorkspaceStore.getState().finishPaperImport(id, paper.id);
+  });
+  expect(
+    screen.queryByRole('heading', { name: 'Preparing your summary' }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'My notes' })).toBeEnabled();
+  expect(screen.getByText('Reading preview.pdf')).toBe(reader);
+  expect(screen.getByLabelText('Current page')).toHaveTextContent('3');
+});
+
+it.each(['failed', 'cancelled', 'excluded'] as const)(
+  'shows a terminal import state (%s) without adding an incomplete paper',
+  async (status) => {
+    const graph = migrateAndValidateGraph(canonicalGraph).graph;
+    useWorkspaceStore.setState({ graph, dirty: false });
+    const id = useWorkspaceStore
+      .getState()
+      .beginPaperImport('https://example.org/paper', 'paper');
+    useWorkspaceStore
+      .getState()
+      .updatePaperImport(id, { status, message: 'A clear import result.' });
+    render(<PaperWorkspace />);
+    expect(await screen.findByText('A clear import result.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel import' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Discuss' })).toBeDisabled();
+    expect(useWorkspaceStore.getState().graph).toBe(graph);
+  },
+);
 
 it('opens a retrieved original without reopening the paper when metadata arrives after completion', async () => {
   vi.useFakeTimers();

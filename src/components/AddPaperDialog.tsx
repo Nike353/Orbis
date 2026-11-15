@@ -22,6 +22,11 @@ function eventText(event: AgentEvent) {
     return `Paper excluded: ${event.reason}`;
   }
   if (event.kind === 'tool') {
+    const name = (event.name ?? '').toLowerCase();
+    if (/fetch|search|open.page/.test(name)) return 'Retrieving and reading the full text…';
+    if (/rebuild|validat/.test(name)) return 'Checking the summary and graph changes…';
+    if (/write|edit/.test(name)) return 'Preparing the summary and proposed connections…';
+    if (/read|list/.test(name)) return 'Reviewing the source and your library…';
     return `${event.name ?? 'Tool'}${event.detail ? ` | ${event.detail}` : ''}`;
   }
   return event.text ?? 'Working';
@@ -49,7 +54,9 @@ export function AddPaperDialog() {
   const setOpen = useWorkspaceStore((state) => state.setAddPaperOpen);
   const dirty = useWorkspaceStore((state) => state.dirty);
   const reloadGraph = useWorkspaceStore((state) => state.refresh);
-  const select = useWorkspaceStore((state) => state.select);
+  const beginImport = useWorkspaceStore((state) => state.beginPaperImport);
+  const updateImport = useWorkspaceStore((state) => state.updatePaperImport);
+  const finishImport = useWorkspaceStore((state) => state.finishPaperImport);
   const [url, setUrl] = useState('');
   const [sourceKind, setSourceKind] = useState<'paper' | 'blog' | 'website'>('paper');
   const [hint, setHint] = useState('');
@@ -96,7 +103,7 @@ export function AddPaperDialog() {
 
   async function cancel() {
     try {
-      await cancelAgentInsertion(jobId.current);
+      if (jobId.current) await cancelAgentInsertion(jobId.current);
     } finally {
       controllerRef.current?.abort();
     }
@@ -104,32 +111,38 @@ export function AddPaperDialog() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (running) return;
     setError(null);
     setEvents([]);
-    if (dirty) {
-      setError('Save or reload graph edits before adding a paper.');
-      return;
-    }
-
-    const currentHealth = await getBridgeHealth();
-    setHealth(currentHealth);
-    const agent = currentHealth?.agents.find((item) => item.id === agentId);
-    if (!agent?.available) {
-      setError(`${agent?.label ?? 'The selected agent'} is unavailable on PATH.`);
-      return;
-    }
-    if (currentHealth?.busy) {
-      setError('Another local agent run is already active.');
-      return;
-    }
-
     const controller = new AbortController();
     jobId.current = undefined;
     controllerRef.current = controller;
     setRunning(true);
+    const importId = beginImport(url.trim(), sourceKind);
     let outcome: 'inserted' | 'excluded' | 'duplicate' | null = null;
     let graphNodeId: string | null = null;
+    let outcomeReason = '';
     try {
+      const workspace = useWorkspaceStore.getState();
+      if (workspace.dirty) {
+        if (workspace.mode !== 'api')
+          throw new Error(
+            'Connect to the local server and save your graph edits before adding a paper.',
+          );
+        updateImport(importId, { message: 'Saving your graph edits…' });
+        await workspace.save();
+        if (useWorkspaceStore.getState().dirty)
+          throw new Error('You have newer graph edits. Save them before adding the paper.');
+        updateImport(importId, { message: 'Checking the local agent…' });
+      }
+      const currentHealth = await getBridgeHealth();
+      setHealth(currentHealth);
+      const agent = currentHealth?.agents.find((item) => item.id === agentId);
+      if (!agent?.available) {
+        throw new Error(`${agent?.label ?? 'The selected agent'} is unavailable on PATH.`);
+      }
+      if (currentHealth?.busy)
+        throw new Error('Another local agent run is already active.');
       await runAgentInsertion(
         agent.id,
         url.trim(),
@@ -138,12 +151,21 @@ export function AddPaperDialog() {
         null,
         controller.signal,
         (next) => {
-          if (next.type === 'start') jobId.current = next.job_id;
+          if (next.type === 'start') {
+            jobId.current = next.job_id;
+            updateImport(importId, {
+              jobId: next.job_id,
+              status: 'running',
+              message: 'Reading the full text…',
+            });
+          }
           if (next.type === 'error') throw new Error(next.message);
           setEvents((current) => [...current, next].slice(-30));
+          if (next.type === 'event') updateImport(importId, { message: eventText(next) });
           if (next.type === 'done') {
             outcome = next.outcome;
             graphNodeId = next.graph_node_id;
+            outcomeReason = next.reason;
           }
         },
         sourceKind,
@@ -151,16 +173,30 @@ export function AddPaperDialog() {
       );
       if (outcome === 'inserted') {
         await reloadGraph();
-        if (graphNodeId) select({ kind: 'node', id: graphNodeId });
+        if (graphNodeId) finishImport(importId, graphNodeId);
         setUrl('');
         setHint('');
       } else if (outcome === 'duplicate' && graphNodeId) {
-        select({ kind: 'node', id: graphNodeId });
+        await reloadGraph();
+        finishImport(importId, graphNodeId);
+      } else {
+        updateImport(importId, {
+          status: 'excluded',
+          message:
+            outcomeReason ||
+            'This source was not added. Check import activity for the reason.',
+        });
       }
     } catch (reason) {
-      if (!controller.signal.aborted) {
-        setError(reason instanceof Error ? reason.message : 'Insertion failed.');
-      }
+      const message = reason instanceof Error ? reason.message : 'Insertion failed.';
+      const cancelled = controller.signal.aborted || /cancelled by user/i.test(message);
+      updateImport(importId, {
+        status: cancelled ? 'cancelled' : 'failed',
+        message: cancelled
+          ? 'Import cancelled. You can keep reading the original.'
+          : message,
+      });
+      if (!cancelled) setError(message);
     } finally {
       controllerRef.current = null;
       setHealth(await getBridgeHealth());
@@ -313,7 +349,9 @@ export function AddPaperDialog() {
           {error && <p className="form-error">{error}</p>}
 
           <footer>
-            <span>{dirty ? 'Unsaved graph edits' : 'localhost only'}</span>
+            <span>
+              {dirty ? 'Your graph edits will be saved first.' : 'localhost only'}
+            </span>
             <div>
               {running && (
                 <>
@@ -323,6 +361,7 @@ export function AddPaperDialog() {
                   <button
                     type="button"
                     className="button danger"
+                    disabled={!jobId.current}
                     onClick={() => void cancel()}
                   >
                     <CircleStop size={15} /> Cancel
@@ -332,10 +371,10 @@ export function AddPaperDialog() {
               <button
                 type="submit"
                 className="button primary"
-                disabled={running || busy || dirty || !ready || !validUrl}
+                disabled={running || busy || !ready || !validUrl}
               >
                 {running ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
-                {running ? 'Reading paper' : 'Read & add'}
+                {running ? 'Reading paper' : dirty ? 'Save & add' : 'Read & add'}
               </button>
             </div>
           </footer>

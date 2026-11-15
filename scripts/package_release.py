@@ -10,7 +10,7 @@ APP = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP / "tools"))
 from build_data_js import render_mirror  # noqa: E402
 
-ROOT_FILES = ["start.sh", "pyproject.toml", "uv.lock", "README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md",
+ROOT_FILES = ["start.sh", "start.ps1", "pyproject.toml", "uv.lock", "README.md", "LICENSE", "CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md",
               "package.json", "package-lock.json", "index.html", "vite.config.ts",
               "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "eslint.config.js",
               "playwright.config.ts", ".gitignore", ".prettierignore", ".prettierrc.json"]
@@ -30,7 +30,7 @@ def package(output, runtime=False):
                      and "__pycache__" not in p.parts and p.suffix not in (".pyc", ".map")
                      and not p.relative_to(APP).as_posix().startswith("dist/data/")
                      and p.relative_to(APP).as_posix() != "docs/WORK_LAPTOP_HANDOFF.md"
-                     and (folder != "desktop" or p.suffix in (".mjs", ".cjs", ".py"))
+                     and (folder != "desktop" or p.suffix in (".mjs", ".cjs", ".py", ".nsh"))
                      and not p.is_symlink())
     graph = {"meta": {"schema_version": 2, "title": "My paper universe", "revision": 0,
                       "updated_at": "2026-01-01T00:00:00Z"}, "nodes": [], "edges": []}

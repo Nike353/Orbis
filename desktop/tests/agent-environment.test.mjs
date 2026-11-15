@@ -48,7 +48,10 @@ test('a CLI on the inherited PATH takes precedence over bundled versions', async
   await makeExecutable(
     path.join(options.applications, 'Codex.app/Contents/Resources/codex'),
   );
-  const env = await agentEnvironment({ PATH: `${bin}:/usr/bin` }, options);
+  const env = await agentEnvironment(
+    { PATH: [bin, '/usr/bin'].join(path.delimiter) },
+    options,
+  );
   assert.equal(env.ORBIS_CODEX, undefined);
   assert.equal(env.PATH.split(path.delimiter)[0], bin);
 });
@@ -70,16 +73,44 @@ test('explicit commands and legacy overrides are preserved without mutating the 
   );
 });
 
-test('directories and non-executable files are not reported as installed CLIs', async (t) => {
+test(
+  'directories and non-executable files are not reported as installed CLIs',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const options = await fixture(t);
+    const resources = path.join(options.applications, 'Codex.app/Contents/Resources');
+    await mkdir(path.join(resources, 'codex'), { recursive: true });
+    const nested = path.join(resources, 'codex-cli/CodexCLI.app/Contents/MacOS/codex');
+    await mkdir(path.dirname(nested), { recursive: true });
+    await writeFile(nested, 'not executable', { mode: 0o600 });
+    assert.equal(
+      (await agentEnvironment({ PATH: '/usr/bin:/bin' }, options)).ORBIS_CODEX,
+      undefined,
+    );
+  },
+);
+
+test('Windows discovers npm Copilot and Node without a terminal PATH and preserves overrides', async (t) => {
   const options = await fixture(t);
-  const resources = path.join(options.applications, 'Codex.app/Contents/Resources');
-  await mkdir(path.join(resources, 'codex'), { recursive: true });
-  const nested = path.join(resources, 'codex-cli/CodexCLI.app/Contents/MacOS/codex');
-  await mkdir(path.dirname(nested), { recursive: true });
-  await writeFile(nested, 'not executable', { mode: 0o600 });
+  const roaming = path.join(options.home, 'AppData', 'Roaming');
+  const shim = path.join(roaming, 'npm', 'copilot.cmd');
+  await makeExecutable(shim);
+  const nodeBin = path.join(roaming, 'nvm', 'v22.23.2');
+  await makeExecutable(path.join(nodeBin, 'node.exe'));
+  const inherited = { Path: path.join(options.home, 'inherited'), APPDATA: roaming };
+  const env = await agentEnvironment(inherited, { home: options.home, platform: 'win32' });
+  assert.equal(env.ORBIS_COPILOT, `"${shim}"`);
+  assert.ok(env.PATH.split(path.delimiter).includes(nodeBin));
+  assert.equal(env.Path, undefined);
+  assert.equal(inherited.Path, path.join(options.home, 'inherited'));
   assert.equal(
-    (await agentEnvironment({ PATH: '/usr/bin:/bin' }, options)).ORBIS_CODEX,
-    undefined,
+    (
+      await agentEnvironment(
+        { ...inherited, ORBIS_COPILOT: 'custom --cli' },
+        { home: options.home, platform: 'win32' },
+      )
+    ).ORBIS_COPILOT,
+    'custom --cli',
   );
 });
 

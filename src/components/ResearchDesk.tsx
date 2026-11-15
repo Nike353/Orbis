@@ -623,7 +623,13 @@ export function ResearchDesk({
                   </div>
                   <div className="research-answer">
                     <div className="answer-meta">
-                      <strong>{turn.agent === 'codex' ? 'Codex' : 'Claude Code'}</strong>
+                      <strong>
+                        {turn.agent === 'copilot'
+                          ? 'GitHub Copilot'
+                          : turn.agent === 'codex'
+                            ? 'Codex'
+                            : 'Claude Code'}
+                      </strong>
                       {turn.settings && (
                         <span>
                           {turn.settings.model || 'CLI model'} ·{' '}
@@ -994,7 +1000,7 @@ export function ResearchDesk({
             One run at a time · 10-minute limit · conversations are saved in your library.{' '}
             {current?.archived ? 'Restore this conversation to continue.' : ''}
             {!health?.agents.some((a) => a.available)
-              ? ' Install and sign in to Codex or Claude Code, then restart the server.'
+              ? ' Install and sign in to Codex, Claude Code, or GitHub Copilot CLI, then restart the server.'
               : ''}
           </p>
         </section>

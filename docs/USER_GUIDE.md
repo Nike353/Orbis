@@ -9,12 +9,13 @@ Desktop dismissal is saved in the app profile across restarts and local port cha
 browser dismissal is remembered for that browser address and carried along when
 you switch graphs through the app.
 
-Open the desktop app, or start the browser version with `sh start.sh`.
+Open the desktop app, or start the browser version with `sh start.sh`
+(`.\start.ps1` in Windows PowerShell).
 The launcher keeps your library separate
 from the application. Use `--workspace /path/to/library` to open another library;
 an empty directory becomes a new universe. Open the localhost URL printed by
 the server. Browsing and manual editing need no agent. AI features require a
-signed-in Codex or Claude Code CLI.
+signed-in GitHub Copilot, Codex, or Claude Code CLI.
 
 In compact windows, the toolbar uses icons with labels on hover. The library and
 inspector take turns to leave room for the galaxy; use the tool rail or close the
@@ -138,9 +139,9 @@ retry after a restart. Proposals still need review before changing your library.
 
 ## Troubleshooting
 
-- Run `sh start.sh --doctor` to inspect prerequisites.
+- Run `sh start.sh --doctor` (`.\start.ps1 --doctor` on Windows) to inspect prerequisites.
 - If an agent is missing, install and sign in to its CLI, then restart the server.
-  Set `ORBIS_CODEX` or `ORBIS_CLAUDE` for a custom executable path.
+  Set `ORBIS_CODEX`, `ORBIS_CLAUDE`, or `ORBIS_COPILOT` for a custom executable path.
 - A provider usage limit or authentication failure comes from that CLI's account.
   Retry after resolving it; Orbis does not purchase credits or reset limits.
 - Save local drafts before asking an agent or accepting a proposal. Reload after
@@ -149,8 +150,8 @@ retry after a restart. Proposals still need review before changing your library.
   and ports for separate libraries.
 - Source builds use Node.js 22 and npm. Terminal builds use Python 3.12 and uv;
   the desktop app bundles its local runtime. AI features need a signed-in CLI.
-  macOS and Linux are supported;
-  native Windows is not supported by the current process and file-lock code.
+  Windows x64 has browser and local-first desktop previews. Windows Google
+  sign-in and sync have not been verified. See [desktop setup](DESKTOP.md).
 
 ## Keep separate graphs
 
@@ -181,14 +182,15 @@ chronological view; web sources without dates appear under **Undated**.
 ## Choose your agent, model, and effort
 
 **Add source**, the import queue, **Discuss**, and **Compare** all include Model
-and Effort controls. Install and sign in to Codex or Claude Code first. Orbis
+and Effort controls. Install and sign in to Copilot, Codex, or Claude Code first. Orbis
 automatically discovers their local installations and reads their current models
 and supported effort levels. New selections use the CLI's configured model and
-**medium** effort when supported. If both CLIs are installed, Codex is the initial
-agent unless you saved another choice or set `ORBIS_DEFAULT_AGENT`.
+**medium** effort when supported. Codex is preferred when installed, unless you
+saved another choice or set `ORBIS_DEFAULT_AGENT`.
 
 Codex choices come from its app-server model list; Claude choices come from its SDK
-initialization. The picker shows the installed version, resolved default, and
+initialization. Copilot choices come from the installed CLI through its official
+SDK. The picker shows the installed version, resolved default, and
 provider-specific model IDs. Older unprefixed Sol preferences are matched to the
 configured provider's current ID. If metadata cannot be read, the picker explains
 the problem and keeps **CLI default** available without inventing model choices.

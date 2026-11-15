@@ -5,6 +5,7 @@ The mirror lets index.html work when opened directly from disk (file://),
 where fetch() is blocked. Run this after every edit to graph.json.
 """
 import argparse
+from datetime import datetime
 import json
 import re
 import sys
@@ -23,6 +24,10 @@ STATUSES = {"proposed", "accepted", "rejected", "uncertain"}
 ORIGINS = {"user", "agent", "claude"}
 ARXIV_ID_RE = re.compile(r"^\d{4}\.\d{4,5}(v\d+)?$")
 EDGE_ID_RE = re.compile(r"^e\d+$")
+DATETIME_RE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}"
+    r"(?::[0-9]{2}(?:\.[0-9]+)?)?(?:Z|[+-][0-9]{2}:?[0-9]{2})"
+)
 
 
 def is_number(value):
@@ -38,6 +43,16 @@ def is_url(value):
         return False
     parsed = urlparse(value)
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def is_datetime(value):
+    if not isinstance(value, str) or not DATETIME_RE.fullmatch(value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
 
 
 def validate(data):
@@ -182,9 +197,13 @@ def validate(data):
                             errors.append(
                                 f"node {nid}: paper arxiv canonical_url "
                                 "must be an http(s) URL")
-                        for field in (
-                                "submitted_at", "updated_at",
-                                "primary_category", "query_id"):
+                        for field in ("submitted_at", "updated_at"):
+                            if not is_datetime(arxiv.get(field)):
+                                errors.append(
+                                    f"node {nid}: paper arxiv.{field} must be "
+                                    "an ISO 8601 datetime with a timezone "
+                                    "(e.g. 2026-03-13T21:09:39Z)")
+                        for field in ("primary_category", "query_id"):
                             if not is_non_empty_string(arxiv.get(field)):
                                 errors.append(
                                     f"node {nid}: paper arxiv.{field} "

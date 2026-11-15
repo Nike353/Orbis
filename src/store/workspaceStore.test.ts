@@ -17,6 +17,7 @@ function resetStore() {
     draftAvailable: false,
     selection: null,
     paperWorkspace: null,
+    paperImport: null,
     researchScope: [],
     researchSessionId: null,
     activeTab: 'library',
@@ -145,6 +146,36 @@ describe('workspace store', () => {
     expect(useWorkspaceStore.getState().dirty).toBe(false);
     useWorkspaceStore.getState().openPaper('paper:missing');
     expect(useWorkspaceStore.getState().paperWorkspace).toBeNull();
+  });
+
+  it('opens an import immediately without creating a graph node or dirty draft', () => {
+    const before = useWorkspaceStore.getState();
+    const id = before.beginPaperImport('https://arxiv.org/abs/2610.12345', 'paper');
+    const pending = useWorkspaceStore.getState();
+    expect(pending.paperWorkspace).toMatchObject({ nodeId: id, importId: id });
+    expect(pending.paperImport).toMatchObject({ status: 'starting' });
+    expect(pending.graph).toBe(before.graph);
+    expect(pending.dirty).toBe(false);
+    pending.closePaper();
+    pending.openImport();
+    expect(useWorkspaceStore.getState().paperWorkspace?.importId).toBe(id);
+    const paperId = graph.nodes.find((node) => node.type === 'paper')!.id;
+    pending.finishPaperImport(id, paperId);
+    expect(useWorkspaceStore.getState().paperWorkspace).toMatchObject({
+      nodeId: paperId,
+      importId: id,
+    });
+  });
+
+  it('does not pull the reader back when an import finishes after navigating away', () => {
+    const id = useWorkspaceStore
+      .getState()
+      .beginPaperImport('https://example.org/paper', 'paper');
+    const papers = graph.nodes.filter((node) => node.type === 'paper');
+    useWorkspaceStore.getState().openPaper(papers[0].id);
+    useWorkspaceStore.getState().finishPaperImport(id, papers[1].id);
+    expect(useWorkspaceStore.getState().paperWorkspace?.nodeId).toBe(papers[0].id);
+    expect(useWorkspaceStore.getState().paperImport?.nodeId).toBe(papers[1].id);
   });
 
   it('saves the next revision and clears dirty draft state', async () => {

@@ -70,6 +70,85 @@ class DocumentsTests(unittest.TestCase):
         self.assertEqual(a["sha256"], b["sha256"])
         self.assertEqual(len(list((self.root / "attachments").glob("*.blob"))), 1)
 
+    def test_import_preview_is_readable_without_entering_the_graph_or_shared_catalog(self):
+        before = (self.root / "data/graph.json").read_bytes()
+        import_job = {"id": "c" * 32, "title": "Pending paper", "url": "https://arxiv.org/abs/2610.12345v2"}
+        with patch("tools.documents.threading.Thread.start"):
+            job = self.store.fetch_import(import_job)
+            self.assertEqual(self.store.fetch_import(import_job)["id"], job["id"])
+        with patch("tools.documents.public_download",
+                   return_value=(pdf_bytes(), "application/pdf", "https://arxiv.org/pdf/2610.12345v2")):
+            self.store.run_fetch(job, threading.Event())
+        finished = self.store.jobs()[0]
+        self.assertEqual(finished["status"], "completed")
+        original = self.store.document(finished["document_id"])
+        self.assertEqual(original["node_id"], "")
+        self.assertEqual(self.store.records(), {})
+        self.assertEqual(self.store.blob(original["sha256"]), pdf_bytes())
+        self.assertIn("82 percent", self.store.pages(original["id"])["pages"][2]["text"])
+        self.assertEqual(self.store.retrieve(["paper:a"], "accuracy")["passages"], [])
+        self.store.local_state(original["sha256"], last_page=3)
+        self.assertTrue(self.store.bind_import(import_job["id"], "paper:a"))
+        saved = self.store.listing("paper:a")["documents"][0]
+        self.assertEqual(saved["id"], original["id"])
+        self.assertEqual(saved["last_page"], 3)
+        self.assertEqual(saved["node_id"], "paper:a")
+        self.assertEqual((self.root / "data/graph.json").read_bytes(), before)
+
+    def test_import_finishing_before_its_preview_attaches_the_original_to_the_final_node(self):
+        import_job = {"id": "c" * 32, "title": "Pending paper", "url": "https://example.org/paper.pdf"}
+        with patch("tools.documents.threading.Thread.start"):
+            job = self.store.fetch_import(import_job)
+        self.assertTrue(self.store.bind_import(import_job["id"], "paper:b"))
+        with patch("tools.documents.public_download",
+                   return_value=(pdf_bytes(), "application/pdf", import_job["url"])):
+            self.store.run_fetch(job, threading.Event())
+        saved = self.store.listing("paper:b")["documents"][0]
+        self.assertEqual(self.store.jobs()[0]["document_id"], saved["id"])
+        self.assertEqual(self.store.document(saved["id"])["node_id"], "paper:b")
+        self.assertEqual(self.store.listing("paper:a")["documents"], [])
+
+    def test_preview_retry_downloads_again_when_its_cached_original_is_missing(self):
+        import_job = {"id": "c" * 32, "title": "Pending paper", "url": "https://example.org/paper.pdf"}
+        with patch("tools.documents.threading.Thread.start"):
+            job = self.store.fetch_import(import_job)
+        with patch("tools.documents.public_download",
+                   return_value=(pdf_bytes(), "application/pdf", import_job["url"])):
+            self.store.run_fetch(job, threading.Event())
+        self.assertEqual(self.store.fetch_import(import_job)["id"], job["id"])
+        original = self.store.document(self.store.jobs()[0]["document_id"])
+        self.store.blob_path(original["sha256"]).unlink()
+        with patch("tools.documents.threading.Thread.start"):
+            retry = self.store.fetch_import(import_job)
+        self.assertNotEqual(retry["id"], job["id"])
+        with patch("tools.documents.public_download",
+                   return_value=(pdf_bytes(), "application/pdf", import_job["url"])):
+            self.store.run_fetch(retry, threading.Event())
+        self.assertEqual(self.store.jobs()[0]["status"], "completed")
+        self.assertTrue(self.store.view(original)["available"])
+        self.assertEqual(self.store.records(), {})
+
+    def test_preview_of_a_landing_page_cannot_replace_the_attested_full_text_original(self):
+        import_job = {"id": "c" * 32, "title": "Pending paper", "url": "https://example.org/abstract"}
+        with patch("tools.documents.threading.Thread.start"):
+            self.store.fetch_import(import_job)
+        self.assertFalse(self.store.bind_import(
+            import_job["id"], "paper:a", "https://example.org/full-text.pdf"))
+        self.assertEqual(self.store.jobs()[0]["node_id"], "")
+        self.assertEqual(self.store.records(), {})
+
+    def test_failed_import_preview_does_not_create_an_attachment_or_graph_node(self):
+        before = (self.root / "data/graph.json").read_bytes()
+        import_job = {"id": "c" * 32, "title": "Pending paper", "url": "https://example.org/paper.pdf"}
+        with patch("tools.documents.threading.Thread.start"):
+            job = self.store.fetch_import(import_job)
+        with patch("tools.documents.public_download", side_effect=DocumentError("Source unavailable")):
+            self.store.run_fetch(job, threading.Event())
+        self.assertEqual(self.store.jobs()[0]["status"], "failed")
+        self.assertEqual(self.store.jobs()[0]["error"], "Source unavailable")
+        self.assertEqual(self.store.records(), {})
+        self.assertEqual((self.root / "data/graph.json").read_bytes(), before)
+
     def test_identical_bytes_retain_distinct_source_versions(self):
         first = self.attach()
         next_version = self.store.attach("paper:a", pdf_bytes(),
